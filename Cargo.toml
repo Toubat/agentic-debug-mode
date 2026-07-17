@@ -1,0 +1,12 @@
+[workspace]
+members = ["native/query", "native/system"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+rust-version = "1.91"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
