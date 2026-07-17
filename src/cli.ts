@@ -23,10 +23,7 @@ async function main(): Promise<number> {
 
   const parsed = parseArgs(argv);
   const output = await dispatch(parsed);
-  const rendered =
-    parsed.options.json === true
-      ? JSON.stringify(output)
-      : renderPretty(output);
+  const rendered = parsed.options.json === true ? JSON.stringify(output) : renderPretty(output);
   const stream = output.ok ? console.log : console.error;
   stream(rendered);
   return output.ok ? 0 : exitCodeForError(output.error.code);

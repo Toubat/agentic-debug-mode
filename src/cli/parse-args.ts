@@ -6,15 +6,7 @@ export interface ParsedArgs {
   positionals: string[];
 }
 
-const BOOLEAN_OPTIONS = new Set([
-  "follow",
-  "force",
-  "help",
-  "json",
-  "jsonl",
-  "slurp",
-  "version",
-]);
+const BOOLEAN_OPTIONS = new Set(["follow", "force", "help", "json", "jsonl", "slurp", "version"]);
 
 function addOption(
   options: Record<string, ParsedOption>,
@@ -44,7 +36,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
   };
 
   for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]!;
+    const token = tokens[index];
+    if (token === undefined) {
+      break;
+    }
     if (!token.startsWith("--")) {
       parsed.positionals.push(token);
       continue;
@@ -53,11 +48,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const option = token.slice(2);
     const equalsIndex = option.indexOf("=");
     if (equalsIndex >= 0) {
-      addOption(
-        parsed.options,
-        option.slice(0, equalsIndex),
-        option.slice(equalsIndex + 1),
-      );
+      addOption(parsed.options, option.slice(0, equalsIndex), option.slice(equalsIndex + 1));
       continue;
     }
 

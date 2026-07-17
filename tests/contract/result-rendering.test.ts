@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { renderPretty } from "../../src/cli/pretty-renderer";
 import type { CommandResult } from "../../src/cli/output-schema";
+import { renderPretty } from "../../src/cli/pretty-renderer";
 
 describe("command result rendering", () => {
   test("pretty output orders warnings, summary, data, then hints", () => {

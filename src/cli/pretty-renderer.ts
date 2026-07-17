@@ -1,9 +1,4 @@
-import type {
-  CommandError,
-  CommandOutput,
-  CommandResult,
-  Hint,
-} from "./output-schema";
+import type { CommandError, CommandOutput, CommandResult, Hint } from "./output-schema";
 
 function renderError(output: CommandError): string {
   const lines = [`ERROR  [${output.error.code}] ${output.error.message}`];
@@ -49,18 +44,11 @@ function renderValue(value: unknown, indentation = "  "): string[] {
 }
 
 function renderData(result: CommandResult): string[] {
-  if (
-    result.data === null ||
-    typeof result.data !== "object" ||
-    Array.isArray(result.data)
-  ) {
+  if (result.data === null || typeof result.data !== "object" || Array.isArray(result.data)) {
     return renderValue(result.data);
   }
 
-  return Object.entries(result.data).flatMap(([key, value]) => [
-    key,
-    ...renderValue(value),
-  ]);
+  return Object.entries(result.data).flatMap(([key, value]) => [key, ...renderValue(value)]);
 }
 
 function renderHint(hint: Hint): string[] {
@@ -79,9 +67,7 @@ export function renderPretty(output: CommandOutput): string {
   const sections: string[][] = [];
   if (output.warnings.length > 0) {
     sections.push(
-      output.warnings.map(
-        (warning) => `WARNING  [${warning.code}] ${warning.message}`,
-      ),
+      output.warnings.map((warning) => `WARNING  [${warning.code}] ${warning.message}`),
     );
   }
 

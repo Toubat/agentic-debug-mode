@@ -14,14 +14,11 @@ function dynamicLibraryName(crateName: string): string {
 }
 
 async function build(packageName: string, crateName: string, destination: string) {
-  const processHandle = Bun.spawn(
-    ["cargo", "build", "--release", "--package", packageName],
-    {
-      cwd: root,
-      stderr: "inherit",
-      stdout: "inherit",
-    },
-  );
+  const processHandle = Bun.spawn(["cargo", "build", "--release", "--package", packageName], {
+    cwd: root,
+    stderr: "inherit",
+    stdout: "inherit",
+  });
   const exitCode = await processHandle.exited;
   if (exitCode !== 0) {
     throw new Error(`cargo build failed for ${packageName} with exit code ${exitCode}`);

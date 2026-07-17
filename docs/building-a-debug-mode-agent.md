@@ -1256,20 +1256,34 @@ user-scoped daemon
 
 ### 9.1 Process and state ownership
 
-Store daemon state in the platform user-data directory, not the repository:
+Store every persistent runtime artifact under the fixed user-home root
+`~/.agent-debug-mode/` on macOS, Linux, and Windows. Do not use repositories,
+XDG directories, Application Support, or LocalAppData:
 
 ```text
-<user-data>/debug-mode/
-├── daemon.json        # PID, port, protocol version, startup nonce
-├── control.token      # user-only permissions
+~/.agent-debug-mode/
+├── daemon.json
+├── control.token
+├── startup.lock/
+├── ready/
+├── tmp/
 └── sessions/
     └── <session-id>/
         ├── session.json
         ├── runs.json
-        └── events.ndjson
+        ├── incoming.ndjson
+        ├── events.ndjson
+        └── diagnostics.ndjson
 ```
 
-`runs.json` stores immutable run metadata, including declared hypothesis IDs. It contains no raw evidence.
+Create directories with user-only permissions and metadata/evidence files with
+user read/write permissions where the OS supports POSIX modes. Reject symbolic
+links and path-traversing identifiers. Metadata replacement uses a flushed
+temporary file in the same directory followed by atomic rename.
+
+`runs.json` stores immutable run metadata, including declared hypothesis IDs. It
+contains no raw evidence. Direct-append probes write only `incoming.ndjson`; the
+daemon alone validates, sequences, and writes canonical `events.ndjson`.
 
 `daemon.json` is not proof that the process is alive. The CLI must authenticate to a health/control endpoint and verify PID identity, protocol version, and startup nonce before reusing or stopping a process.
 

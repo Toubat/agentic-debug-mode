@@ -19,9 +19,6 @@ export function inspectProcess(pid: number): ProcessInspection {
   return addon.inspectProcess(pid);
 }
 
-export function terminateIfIdentityMatches(
-  pid: number,
-  identity: string,
-): TerminationResult {
+export function terminateIfIdentityMatches(pid: number, identity: string): TerminationResult {
   return addon.terminateIfIdentityMatches(pid, identity);
 }

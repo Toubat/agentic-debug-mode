@@ -10,14 +10,7 @@ await rm(outputDirectory, { force: true, recursive: true });
 await mkdir(outputDirectory, { recursive: true });
 
 const processHandle = Bun.spawn(
-  [
-    "bun",
-    "build",
-    "--compile",
-    "--outfile",
-    executable,
-    join(root, "src", "cli.ts"),
-  ],
+  ["bun", "build", "--compile", "--outfile", executable, join(root, "src", "cli.ts")],
   {
     cwd: root,
     stderr: "inherit",

@@ -10,6 +10,8 @@
     "build": "bun run build:native && bun run build:binary",
     "build:native": "bun scripts/build-native.ts",
     "build:binary": "bun scripts/build-binary.ts",
+    "check": "biome check .",
+    "check:write": "biome check --write .",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
@@ -17,6 +19,7 @@
     "binaryName": "agentic-debug-mode"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.4",
     "@napi-rs/cli": "^3.7.3",
     "@types/bun": "^1.3.14",
     "typescript": "^7.0.2"

@@ -35,9 +35,10 @@ describe("standalone native addon distribution", () => {
   });
 
   test("embeds both N-API addons and runs without Bun on PATH", async () => {
-    const systemPath = process.platform === "win32"
-      ? dirname(process.execPath)
-      : ["/usr/bin", "/bin"].join(delimiter);
+    const systemPath =
+      process.platform === "win32"
+        ? dirname(process.execPath)
+        : ["/usr/bin", "/bin"].join(delimiter);
     const result = await run([executable, "__native-smoke"], { PATH: systemPath });
 
     expect(result.exitCode, result.stderr).toBe(0);

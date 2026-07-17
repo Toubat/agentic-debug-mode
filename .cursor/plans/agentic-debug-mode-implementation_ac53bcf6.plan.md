@@ -10,10 +10,10 @@ todos:
     status: completed
   - id: persistence
     content: Implement atomic ~/.agent-debug-mode persistence with isolated sessions and immutable runs
-    status: in_progress
+    status: completed
   - id: daemon-supervisor
     content: Implement and stress-test single-instance daemon startup, recovery, ports, upgrades, and shutdown
-    status: pending
+    status: in_progress
   - id: ingestion
     content: Add authenticated control APIs and normalized HTTP/direct ingestion
     status: pending

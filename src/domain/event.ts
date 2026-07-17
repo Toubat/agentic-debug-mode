@@ -1,8 +1,5 @@
 export type JsonPrimitive = boolean | number | string | null;
-export type JsonValue =
-  | JsonPrimitive
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
 export interface ProbeEvent {
   schemaVersion: 1;
