@@ -1,11 +1,12 @@
 import { requestDaemonControl } from "../cli/daemon-client";
 import { ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput, Hint, Warning } from "../cli/output-schema";
-import type { ParsedArgs } from "../cli/parse-args";
+import type { CliInvocation } from "../cli/program";
 import { createSnapshotCursor, verifySnapshotCursor } from "../cli/snapshot-cursor";
 import type { EvidenceDiagnostic } from "../domain/diagnostic";
 import type { NormalizedEvent } from "../domain/event";
-import { optionInteger, optionString, optionStrings } from "./options";
+
+type LogsOptions = Extract<CliInvocation["command"], { kind: "logs" }>;
 
 interface LogsResponse {
   diagnostics: EvidenceDiagnostic[];
@@ -37,7 +38,8 @@ function diagnosticsWarnings(diagnostics: EvidenceDiagnostic[]): Warning[] {
 }
 
 function pageCommand(
-  args: ParsedArgs,
+  options: LogsOptions,
+  json: boolean,
   sessionId: string,
   offset: number,
   limit: number,
@@ -50,19 +52,19 @@ function pageCommand(
     `--limit ${limit}`,
     `--snapshot ${snapshot}`,
   ];
-  for (const hypothesis of optionStrings(args.options, "hypothesis")) {
+  for (const hypothesis of options.hypotheses) {
     parts.push(`--hypothesis ${hypothesis}`);
   }
-  if (args.options.json === true) {
+  if (json) {
     parts.push("--json");
   }
   return parts.join(" ");
 }
 
-export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
-  const sessionId = optionString(args.options, "session");
-  const offset = optionInteger(args.options, "offset", 0);
-  const limit = optionInteger(args.options, "limit", 100);
+export async function logsCommand(options: LogsOptions, json: boolean): Promise<CommandOutput> {
+  const sessionId = options.sessionId;
+  const offset = options.offset;
+  const limit = options.limit;
   if (!sessionId || offset === undefined || limit === undefined || limit < 1) {
     return {
       error: {
@@ -79,8 +81,8 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
     const daemon = await ensureDaemon({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
-    const hypothesisFilter = optionStrings(args.options, "hypothesis");
-    const requestedSnapshot = optionString(args.options, "snapshot");
+    const hypothesisFilter = options.hypotheses;
+    const requestedSnapshot = options.snapshot;
     const requestedWatermark = requestedSnapshot
       ? verifySnapshotCursor(daemon.controlToken, requestedSnapshot, {
           sessionId,
@@ -120,14 +122,14 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
       const previousOffset = Math.max(0, offset - limit);
       hints.push({
         action: "previous-page",
-        command: pageCommand(args, sessionId, previousOffset, limit, snapshot),
+        command: pageCommand(options, json, sessionId, previousOffset, limit, snapshot),
         message: "Read the previous page.",
       });
     }
     if (hasNext) {
       hints.push({
         action: "next-page",
-        command: pageCommand(args, sessionId, offset + limit, limit, snapshot),
+        command: pageCommand(options, json, sessionId, offset + limit, limit, snapshot),
         message: "Read the next page.",
       });
     }

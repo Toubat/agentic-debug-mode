@@ -23,7 +23,10 @@ export interface CommandResult<TData = unknown> {
   command: string;
   scope: CommandScope;
   warnings: Warning[];
-  statistics: Record<string, number | string | boolean | null>;
+  statistics: Record<
+    string,
+    number | string | boolean | null | Record<string, number | string | boolean | null>
+  >;
   data: TData;
   hints: Hint[];
 }

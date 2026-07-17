@@ -1,12 +1,13 @@
 import { requestDaemonControl } from "../cli/daemon-client";
 import { ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput, Warning } from "../cli/output-schema";
-import type { ParsedArgs } from "../cli/parse-args";
+import type { CliInvocation } from "../cli/program";
 import { runQueryWithTimeout } from "../cli/query-runner";
 import { createSnapshotCursor, verifySnapshotCursor } from "../cli/snapshot-cursor";
 import { Persistence } from "../daemon/persistence";
 import type { EvidenceDiagnostic } from "../domain/diagnostic";
-import { optionInteger, optionString, optionStrings } from "./options";
+
+type QueryOptions = Extract<CliInvocation["command"], { kind: "query" }>;
 
 interface QueryInputResponse {
   diagnostics: EvidenceDiagnostic[];
@@ -14,9 +15,9 @@ interface QueryInputResponse {
   watermark: number;
 }
 
-export async function queryCommand(args: ParsedArgs): Promise<CommandOutput> {
-  const sessionId = optionString(args.options, "session");
-  const program = args.positionals[0];
+export async function queryCommand(options: QueryOptions): Promise<CommandOutput> {
+  const sessionId = options.sessionId;
+  const program = options.program;
   if (!sessionId || !program || program.length > 4_096) {
     return {
       error: {
@@ -38,8 +39,8 @@ export async function queryCommand(args: ParsedArgs): Promise<CommandOutput> {
       daemon,
       `/v1/control/sessions/${sessionId}/status`,
     );
-    const hypothesisFilter = optionStrings(args.options, "hypothesis");
-    const requestedSnapshot = optionString(args.options, "snapshot");
+    const hypothesisFilter: string[] = [];
+    const requestedSnapshot: string | undefined = undefined;
     const watermark = requestedSnapshot
       ? verifySnapshotCursor(daemon.controlToken, requestedSnapshot, {
           sessionId,
@@ -52,8 +53,8 @@ export async function queryCommand(args: ParsedArgs): Promise<CommandOutput> {
         sessionId,
         watermark,
       });
-    const slurp = args.options.slurp === true;
-    const timeoutMilliseconds = optionInteger(args.options, "timeout-ms", 2_000);
+    const slurp = options.slurp;
+    const timeoutMilliseconds = options.timeoutMs;
     if (timeoutMilliseconds === undefined || timeoutMilliseconds < 1) {
       return {
         error: {

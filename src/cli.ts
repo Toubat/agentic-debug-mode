@@ -1,8 +1,8 @@
 import { ensureDaemon } from "./cli/daemon-manager";
 import { dispatch } from "./cli/dispatch";
 import { exitCodeForError } from "./cli/exit-codes";
-import { parseArgs } from "./cli/parse-args";
 import { renderPretty } from "./cli/pretty-renderer";
+import { CliParseError, parseCli } from "./cli/program";
 import type { QueryWorkerInput } from "./cli/query-runner";
 import { runDaemon } from "./daemon/main";
 import { runJaq, runJaqFile } from "./native/query";
@@ -16,13 +16,7 @@ async function main(): Promise<number> {
     const input = JSON.parse(await Bun.stdin.text()) as QueryWorkerInput;
     console.log(
       JSON.stringify(
-        runJaqFile(
-          input.program,
-          input.path,
-          input.hypotheses,
-          input.watermark,
-          input.slurp,
-        ),
+        runJaqFile(input.program, input.path, input.hypotheses, input.watermark, input.slurp),
       ),
     );
     return 0;
@@ -68,9 +62,23 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  const parsed = parseArgs(argv);
+  let parsed: Awaited<ReturnType<typeof parseCli>>;
+  try {
+    parsed = await parseCli(argv);
+  } catch (error) {
+    if (error instanceof CliParseError) {
+      console.error(error.output || error.message);
+      return error.exitCode;
+    }
+    throw error;
+  }
+  if ("helpText" in parsed) {
+    process.stdout.write(parsed.helpText);
+    return 0;
+  }
+
   const output = await dispatch(parsed);
-  const rendered = parsed.options.json === true ? JSON.stringify(output) : renderPretty(output);
+  const rendered = parsed.json ? JSON.stringify(output) : renderPretty(output);
   const stream = output.ok ? console.log : console.error;
   stream(rendered);
   return output.ok ? 0 : exitCodeForError(output.error.code);

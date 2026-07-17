@@ -1,10 +1,9 @@
 import { requestDaemonControl } from "../cli/daemon-client";
 import { ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput } from "../cli/output-schema";
-import type { ParsedArgs } from "../cli/parse-args";
 import type { Session } from "../domain/session";
 
-export async function sessionsCommand(_args: ParsedArgs): Promise<CommandOutput> {
+export async function sessionsCommand(_all: boolean): Promise<CommandOutput> {
   try {
     const daemon = await ensureDaemon({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
