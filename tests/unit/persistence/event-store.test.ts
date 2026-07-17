@@ -23,32 +23,54 @@ function event(id: string, sequence: number): NormalizedEvent {
     location: "src/example.ts:1",
     message: "Observed value",
     receivedAt: sequence,
-    runId: "baseline",
-    schemaVersion: 1,
     sequence,
-    sessionId: "assigned-below",
     timestamp: sequence,
   };
 }
 
 describe("event store", () => {
-  test("serializes a run clear between earlier and later appends", async () => {
+  test("serializes a clear between earlier and later appends", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);
     const persistence = await Persistence.open(home);
-    const session = await new SessionRegistry(persistence).create({
-      activeRunId: "baseline",
-      workspace: "/workspace/project",
-    });
+    const session = await new SessionRegistry(persistence).create();
     const store = new EventStore(persistence);
-    const before = { ...event("before", 1), sessionId: session.id };
-    const after = { ...event("after", 2), sessionId: session.id };
+    const before = event("before", 1);
+    const after = event("after", 2);
 
-    const firstAppend = store.append(before);
-    const clear = store.clearRun(session.id, "baseline");
-    const secondAppend = store.append(after);
+    const firstAppend = store.append(session.id, before);
+    const clear = store.clear(session.id);
+    const secondAppend = store.append(session.id, after);
     await Promise.all([firstAppend, clear, secondAppend]);
 
-    expect(await store.read(session.id, "baseline")).toEqual([after]);
+    expect(await store.read(session.id)).toEqual([after]);
+  });
+
+  test("streams a bounded snapshot page with aggregate counts", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
+    temporaryDirectories.push(home);
+    const persistence = await Persistence.open(home);
+    const session = await new SessionRegistry(persistence).create();
+    const store = new EventStore(persistence);
+    await store.append(session.id, event("first", 1));
+    await store.append(session.id, event("second", 2));
+    await store.append(session.id, {
+      ...event("undeclared", 3),
+      hypothesisId: "H9",
+    });
+
+    expect(
+      await store.readPage(session.id, {
+        hypothesisIds: [],
+        limit: 1,
+        offset: 1,
+        watermark: 3,
+      }),
+    ).toEqual({
+      records: [expect.objectContaining({ id: "second" })],
+      recordsByHypothesis: { H1: 2, H9: 1 },
+      totalRecords: 3,
+      watermark: 3,
+    });
   });
 });

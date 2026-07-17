@@ -1,15 +1,9 @@
-import { randomBytes, randomUUID } from "node:crypto";
-import { readdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { readdir, rm } from "node:fs/promises";
 import type { Session } from "../domain/session";
 import { readJsonFile, writeJsonAtomic } from "../platform/atomic-file";
 import { ensurePrivateFile } from "../platform/permissions";
 import type { Persistence } from "./persistence";
-
-export interface CreateSessionInput {
-  activeRunId: string;
-  workspace: string;
-  createdAt?: number;
-}
 
 export class SessionRegistry {
   constructor(private readonly persistence: Persistence) {}
@@ -18,19 +12,16 @@ export class SessionRegistry {
     return this.persistence.sessionFile(sessionId, "incoming.ndjson");
   }
 
-  async create(input: CreateSessionInput): Promise<Session> {
+  async create(createdAt = Date.now()): Promise<Session> {
     const session: Session = Object.freeze({
-      activeRunId: input.activeRunId,
-      createdAt: input.createdAt ?? Date.now(),
+      createdAt,
+      eventSchemaVersion: 1,
+      evidenceEpoch: randomUUID(),
       id: randomUUID(),
-      ingestCapability: randomBytes(24).toString("base64url"),
-      status: "active",
-      workspace: input.workspace,
     });
     await this.persistence.initializeSessionDirectory(session.id);
     await Promise.all([
       writeJsonAtomic(this.persistence.sessionFile(session.id, "session.json"), session),
-      writeJsonAtomic(this.persistence.sessionFile(session.id, "runs.json"), []),
       writeJsonAtomic(this.persistence.sessionFile(session.id, "incoming.cursor.json"), {
         offset: 0,
       }),
@@ -66,27 +57,11 @@ export class SessionRegistry {
       .sort((left, right) => left.createdAt - right.createdAt);
   }
 
-  async findByWorkspace(workspace: string): Promise<Session[]> {
-    return (await this.list()).filter((session) => session.workspace === workspace);
-  }
-
-  async setActiveRun(sessionId: string, runId: string): Promise<Session> {
-    const session = await this.get(sessionId);
-    if (!session) {
-      throw new Error(`Session ${sessionId} does not exist`);
+  async remove(sessionId: string): Promise<boolean> {
+    if (!(await this.get(sessionId))) {
+      return false;
     }
-    const updated = Object.freeze({ ...session, activeRunId: runId });
-    await writeJsonAtomic(this.persistence.sessionFile(sessionId, "session.json"), updated);
-    return updated;
-  }
-
-  async close(sessionId: string): Promise<Session> {
-    const session = await this.get(sessionId);
-    if (!session) {
-      throw new Error(`Session ${sessionId} does not exist`);
-    }
-    const updated = Object.freeze({ ...session, status: "closed" as const });
-    await writeJsonAtomic(this.persistence.sessionFile(sessionId, "session.json"), updated);
-    return updated;
+    await rm(this.persistence.sessionDirectory(sessionId), { force: true, recursive: true });
+    return true;
   }
 }

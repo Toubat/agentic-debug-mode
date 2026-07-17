@@ -14,7 +14,7 @@ interface QueryInputResponse {
   eventCount: number;
   hypothesisIds: string[];
   runId: string;
-  session: Omit<Session, "ingestCapability">;
+  session: Session;
   watermark: number;
 }
 
@@ -43,17 +43,6 @@ export async function queryCommand(args: ParsedArgs): Promise<CommandOutput> {
       daemon,
       `/v1/control/sessions/${sessionId}/status?runId=${encodeURIComponent(runId)}`,
     );
-    const workspace = optionString(args.options, "workspace");
-    if (workspace && workspace !== input.session.workspace) {
-      return {
-        error: {
-          code: "SESSION_NOT_FOUND",
-          message: `Session ${sessionId} does not belong to workspace ${workspace}.`,
-        },
-        ok: false,
-        schemaVersion: 1,
-      };
-    }
     const hypothesisFilter = optionStrings(args.options, "hypothesis");
     const requestedSnapshot = optionString(args.options, "snapshot");
     const watermark = requestedSnapshot

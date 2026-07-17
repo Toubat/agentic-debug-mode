@@ -14,24 +14,16 @@ afterEach(async () => {
 });
 
 describe("session persistence", () => {
-  test("keeps sessions for two workspaces isolated under the user state root", async () => {
+  test("keeps sessions isolated under the user state root", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);
     const persistence = await Persistence.open(home);
     const sessions = new SessionRegistry(persistence);
 
-    const first = await sessions.create({
-      activeRunId: "baseline",
-      workspace: "/workspace/first",
-    });
-    const second = await sessions.create({
-      activeRunId: "baseline",
-      workspace: "/workspace/second",
-    });
+    const first = await sessions.create();
+    const second = await sessions.create();
 
     expect(first.id).not.toBe(second.id);
-    expect(await sessions.findByWorkspace("/workspace/first")).toEqual([first]);
-    expect(await sessions.findByWorkspace("/workspace/second")).toEqual([second]);
     expect(await sessions.get(first.id)).toEqual(first);
     expect(await sessions.get(second.id)).toEqual(second);
   });

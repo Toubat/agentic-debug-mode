@@ -52,13 +52,11 @@ export class DirectAppendObserver {
   }
 
   private async tick(): Promise<void> {
-    const sessions = (await this.sessions.list()).filter((session) => session.status === "active");
-    await Promise.all(
-      sessions.map((session) => this.processSession(session.id, session.ingestCapability)),
-    );
+    const sessions = await this.sessions.list();
+    await Promise.all(sessions.map((session) => this.processSession(session.id)));
   }
 
-  private async processSession(sessionId: string, capability: string): Promise<void> {
+  private async processSession(sessionId: string): Promise<void> {
     const cursorPath = this.persistence.sessionFile(sessionId, "incoming.cursor.json");
     const cursor = await this.readCursor(cursorPath);
     const incoming = await open(this.persistence.sessionFile(sessionId, "incoming.ndjson"), "r");
@@ -84,7 +82,7 @@ export class DirectAppendObserver {
           const recordEnd = await this.findRecordEnd(incoming, offset + bytesRead, stats.size);
           if (recordEnd !== undefined) {
             await this.ingestion.recordInvalidJson(
-              capability,
+              sessionId,
               "A direct-append record exceeded the maximum supported size.",
             );
             await writeJsonAtomic(cursorPath, { offset: recordEnd });
@@ -95,11 +93,11 @@ export class DirectAppendObserver {
       const complete = contents.subarray(0, finalNewline + 1);
       for (const line of complete.toString("utf8").split("\n").filter(Boolean)) {
         try {
-          await this.ingestion.ingest(capability, JSON.parse(line));
+          await this.ingestion.ingest(sessionId, JSON.parse(line));
         } catch (error) {
           if (error instanceof SyntaxError) {
             await this.ingestion.recordInvalidJson(
-              capability,
+              sessionId,
               "A direct-append NDJSON record could not be parsed.",
             );
             continue;

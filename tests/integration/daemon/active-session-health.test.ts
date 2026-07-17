@@ -20,10 +20,7 @@ describe("daemon session health", () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);
     const persistence = await Persistence.open(home);
-    await new SessionRegistry(persistence).create({
-      activeRunId: "baseline",
-      workspace: "/workspace/project",
-    });
+    await new SessionRegistry(persistence).create();
     const connection = await ensureDaemon({ homeDirectory: home });
 
     try {

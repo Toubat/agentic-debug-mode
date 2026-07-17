@@ -52,30 +52,24 @@ describe("jaq query command", () => {
     const sessionId = startOutput.scope.sessionId ?? "";
     const persistence = await Persistence.open(home);
     const events = new EventStore(persistence);
-    await events.append({
+    await events.append(sessionId, {
       data: { index: 2 },
       hypothesisId: "H1",
       id: "later",
       location: "src/query.ts:2",
       message: "Later",
       receivedAt: 2,
-      runId: "baseline",
-      schemaVersion: 1,
       sequence: 2,
-      sessionId,
       timestamp: 2,
     });
-    await events.append({
+    await events.append(sessionId, {
       data: { index: 1 },
       hypothesisId: "H1",
       id: "earlier",
       location: "src/query.ts:1",
       message: "Earlier",
       receivedAt: 1,
-      runId: "baseline",
-      schemaVersion: 1,
       sequence: 1,
-      sessionId,
       timestamp: 1,
     });
 
@@ -91,7 +85,7 @@ describe("jaq query command", () => {
       ]);
       expect(streaming.exitCode, streaming.stderr).toBe(0);
       expect(
-        (JSON.parse(streaming.stdout) as CommandResult<{ results: unknown[] }>).data.results,
+        (JSON.parse(streaming.stdout) as CommandResult<{ rows: unknown[] }>).data.rows,
       ).toEqual([{ id: "later", value: 2 }]);
 
       const slurped = await runCli(home, [
@@ -105,9 +99,72 @@ describe("jaq query command", () => {
         "sort_by(.timestamp) | map(.id)",
       ]);
       expect(slurped.exitCode, slurped.stderr).toBe(0);
+      expect((JSON.parse(slurped.stdout) as CommandResult<{ rows: unknown[] }>).data.rows).toEqual([
+        ["earlier", "later"],
+      ]);
+
+      const firstPage = await runCli(home, [
+        "query",
+        "--session",
+        sessionId,
+        "--run-id",
+        "baseline",
+        "--limit",
+        "1",
+        "--json",
+        ".id",
+      ]);
+      expect(firstPage.exitCode, firstPage.stderr).toBe(0);
+      const firstPageOutput = JSON.parse(firstPage.stdout) as CommandResult<{
+        pagination: { hasNext: boolean; nextCursor?: string };
+        rows: unknown[];
+      }>;
+      expect(firstPageOutput.data.rows).toEqual(["later"]);
+      expect(firstPageOutput.data.pagination.hasNext).toBe(true);
+      expect(firstPageOutput.statistics).toMatchObject({
+        producedValues: 2,
+        returnedRecords: 1,
+      });
+
+      const secondPage = await runCli(home, [
+        "query",
+        "--session",
+        sessionId,
+        "--run-id",
+        "baseline",
+        "--cursor",
+        firstPageOutput.data.pagination.nextCursor ?? "",
+        "--json",
+      ]);
+      expect(secondPage.exitCode, secondPage.stderr).toBe(0);
       expect(
-        (JSON.parse(slurped.stdout) as CommandResult<{ results: unknown[] }>).data.results,
-      ).toEqual([["earlier", "later"]]);
+        (
+          JSON.parse(secondPage.stdout) as CommandResult<{
+            mode: string;
+            pagination: { hasNext: boolean };
+            rows: unknown[];
+            slurp: boolean;
+          }>
+        ).data,
+      ).toEqual({
+        mode: "streaming",
+        pagination: { hasNext: false },
+        rows: ["earlier"],
+        slurp: false,
+      });
+
+      const collectionRequired = await runCli(home, [
+        "query",
+        "--session",
+        sessionId,
+        "--run-id",
+        "baseline",
+        "--json",
+        "sort_by(.timestamp)",
+      ]);
+      expect(collectionRequired.exitCode).toBe(2);
+      expect(collectionRequired.stderr).toContain("COLLECTION_REQUIRED");
+      expect(collectionRequired.stderr).toContain("--slurp");
 
       const timedOut = await runCli(home, [
         "query",
@@ -120,7 +177,8 @@ describe("jaq query command", () => {
         "--json",
         "recurse(.)",
       ]);
-      expect(timedOut.exitCode).toBe(2);
+      expect(timedOut.exitCode).toBe(1);
+      expect(timedOut.stderr).toContain("QUERY_RESOURCE_EXHAUSTED");
       expect(timedOut.stderr).toContain("execution timeout");
     } finally {
       await requestDaemonShutdown(await ensureDaemon({ homeDirectory: home }));

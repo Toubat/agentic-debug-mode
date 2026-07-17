@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 describe("ingestion diagnostics", () => {
-  test("redacts secrets and records malformed or undeclared evidence", async () => {
+  test("redacts secrets and records malformed evidence", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);
     const connection = await ensureDaemon({ homeDirectory: home });
@@ -49,9 +49,6 @@ describe("ingestion diagnostics", () => {
           hypothesisId: "H9",
           location: "src/auth.ts:20",
           message: "Captured auth state",
-          runId: created.runId,
-          schemaVersion: 1,
-          sessionId: created.sessionId,
           timestamp: 1,
         }),
         headers: { "Content-Type": "application/json" },
@@ -71,7 +68,7 @@ describe("ingestion diagnostics", () => {
         (await new DiagnosticStore(persistence).read(created.sessionId)).map(
           (diagnostic) => diagnostic.reason,
         ),
-      ).toEqual(["UNDECLARED_HYPOTHESIS_ID", "SECRET_REDACTED", "INVALID_JSON"]);
+      ).toEqual(["SECRET_REDACTED", "INVALID_JSON"]);
     } finally {
       await requestDaemonShutdown(connection);
     }

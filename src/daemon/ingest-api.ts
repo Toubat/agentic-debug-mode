@@ -3,7 +3,6 @@ import type { EvidenceDiagnostic } from "../domain/diagnostic";
 import { validateAndNormalizeEvent } from "../domain/event-validation";
 import type { DiagnosticStore } from "./diagnostic-store";
 import type { EventStore } from "./event-store";
-import type { RunRegistry } from "./run-registry";
 import type { EventSequence } from "./sequence";
 import type { SessionRegistry } from "./session-registry";
 
@@ -39,20 +38,13 @@ function isAllowedOrigin(origin: string | null): boolean {
 export class IngestionService {
   constructor(
     private readonly sessions: SessionRegistry,
-    private readonly runs: RunRegistry,
     private readonly events: EventStore,
     private readonly diagnostics: DiagnosticStore,
     private readonly sequence: EventSequence,
   ) {}
 
-  private async sessionForCapability(capability: string) {
-    return (await this.sessions.list()).find(
-      (session) => session.status === "active" && session.ingestCapability === capability,
-    );
-  }
-
-  async recordInvalidJson(capability: string, message: string): Promise<boolean> {
-    const session = await this.sessionForCapability(capability);
+  async recordInvalidJson(sessionId: string, message: string): Promise<boolean> {
+    const session = await this.sessions.get(sessionId);
     if (!session) {
       return false;
     }
@@ -61,7 +53,7 @@ export class IngestionService {
       message,
       observedAt: Date.now(),
       reason: "INVALID_JSON",
-      recoverable: { runId: session.activeRunId },
+      recoverable: {},
       redactedPreview: "[redacted invalid JSON]",
       suggestedAction:
         "Inspect the generated probe serializer, correct it, clear the run, and reproduce.",
@@ -70,27 +62,21 @@ export class IngestionService {
     return true;
   }
 
-  async ingest(capability: string, value: unknown): Promise<"accepted" | "invalid" | "not-found"> {
-    const session = await this.sessionForCapability(capability);
+  async ingest(sessionId: string, value: unknown): Promise<"accepted" | "invalid" | "not-found"> {
+    const session = await this.sessions.get(sessionId);
     if (!session) {
       return "not-found";
     }
-    const run = await this.runs.get(session.id, session.activeRunId);
-    if (!run) {
-      throw new Error(`Active run ${session.activeRunId} is missing`);
-    }
     const result = validateAndNormalizeEvent(value, {
       receivedAt: Date.now(),
-      run,
       sequence: 0,
-      session,
     });
     if (!result.event) {
       await this.diagnostics.append(session.id, result.diagnostics);
       return "invalid";
     }
     result.event.sequence = await this.sequence.next(session.id);
-    await this.events.append(result.event);
+    await this.events.append(session.id, result.event);
     await this.diagnostics.append(session.id, result.diagnostics);
     return "accepted";
   }
@@ -104,8 +90,8 @@ export class IngestApi {
     if (!match) {
       return undefined;
     }
-    const capability = match[1];
-    if (!capability) {
+    const sessionId = match[1];
+    if (!sessionId) {
       return Response.json({ error: "not-found" }, { status: 404 });
     }
     const origin = request.headers.get("origin");
@@ -134,7 +120,7 @@ export class IngestApi {
           values.push(JSON.parse(line));
         } catch {
           await this.ingestion.recordInvalidJson(
-            capability,
+            sessionId,
             "An NDJSON record could not be parsed.",
           );
         }
@@ -144,7 +130,7 @@ export class IngestApi {
         values.push(JSON.parse(text));
       } catch {
         const found = await this.ingestion.recordInvalidJson(
-          capability,
+          sessionId,
           "The JSON request body could not be parsed.",
         );
         return Response.json(
@@ -160,7 +146,7 @@ export class IngestApi {
     let accepted = 0;
     let invalid = 0;
     for (const value of values) {
-      const result = await this.ingestion.ingest(capability, value);
+      const result = await this.ingestion.ingest(sessionId, value);
       if (result === "not-found") {
         return Response.json({ error: "not-found" }, { headers: corsHeaders(origin), status: 404 });
       }

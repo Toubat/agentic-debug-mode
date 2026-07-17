@@ -11,7 +11,7 @@ interface StatusResponse {
   eventCount: number;
   hypothesisIds: string[];
   runId: string;
-  session: Omit<Session, "ingestCapability">;
+  session: Session;
 }
 
 export async function statusCommand(args: ParsedArgs): Promise<CommandOutput> {

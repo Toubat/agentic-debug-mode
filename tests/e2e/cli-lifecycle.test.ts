@@ -135,24 +135,18 @@ describe("CLI lifecycle", () => {
       const session = await new SessionRegistry(await Persistence.open(home)).get(sessionId ?? "");
       expect(session).toBeDefined();
       for (const index of [1, 2]) {
-        await fetch(
-          `http://${connection.host}:${connection.port}/v1/ingest/${session?.ingestCapability}`,
-          {
-            body: JSON.stringify({
-              data: { index },
-              hypothesisId: "H1",
-              id: `event-${index}`,
-              location: `src/example.ts:${index}`,
-              message: "Observed",
-              runId: "baseline",
-              schemaVersion: 1,
-              sessionId,
-              timestamp: index,
-            }),
-            headers: { "Content-Type": "application/json" },
-            method: "POST",
-          },
-        );
+        await fetch(`http://${connection.host}:${connection.port}/v1/ingest/${session?.id}`, {
+          body: JSON.stringify({
+            data: { index },
+            hypothesisId: "H1",
+            id: `event-${index}`,
+            location: `src/example.ts:${index}`,
+            message: "Observed",
+            timestamp: index,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
       }
 
       const result = await runCli(home, [
@@ -241,6 +235,19 @@ describe("CLI lifecycle", () => {
       expect(sessions.exitCode, sessions.stderr).toBe(0);
       expect(sessions.stdout).not.toContain("ingestCapability");
 
+      const mismatchedClear = await runCli(home, [
+        "clear",
+        "--workspace",
+        "/workspace/other",
+        "--session",
+        sessionId,
+        "--run-id",
+        "fixed",
+        "--json",
+      ]);
+      expect(mismatchedClear.exitCode).toBe(5);
+      expect(mismatchedClear.stderr).toContain("does not belong to workspace");
+
       for (const command of ["status", "clear"]) {
         const result = await runCli(home, [
           command,
@@ -256,6 +263,14 @@ describe("CLI lifecycle", () => {
       const stopped = await runCli(home, ["stop", "--session", sessionId, "--json"]);
       expect(stopped.exitCode, stopped.stderr).toBe(0);
       expect(stopped.stdout).toContain('"status":"stopped"');
+
+      const cleaned = await runCli(home, ["clean", "--session", sessionId, "--json"]);
+      expect(cleaned.exitCode, cleaned.stderr).toBe(0);
+      expect(cleaned.stdout).toContain('"removed":true');
+
+      const afterClean = await runCli(home, ["sessions", "--json"]);
+      expect(afterClean.exitCode, afterClean.stderr).toBe(0);
+      expect(afterClean.stdout).toContain('"sessions":[]');
     } finally {
       const connection = await ensureDaemon({ homeDirectory: home });
       await requestDaemonShutdown(connection);

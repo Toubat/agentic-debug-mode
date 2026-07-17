@@ -1,11 +1,6 @@
-export type DiagnosticReason =
-  | "INVALID_JSON"
-  | "INVALID_SCHEMA"
-  | "SECRET_REDACTED"
-  | "UNDECLARED_HYPOTHESIS_ID";
+export type DiagnosticReason = "INVALID_JSON" | "INVALID_SCHEMA" | "SECRET_REDACTED";
 
 export interface RecoverableEventFields {
-  runId?: string;
   hypothesisId?: string;
   location?: string;
 }

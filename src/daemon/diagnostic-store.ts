@@ -54,17 +54,9 @@ export class DiagnosticStore {
     return this.readFile(sessionId);
   }
 
-  async clearRun(sessionId: string, runId: string): Promise<void> {
+  async clear(sessionId: string): Promise<void> {
     await this.enqueue(sessionId, async () => {
-      const retained = (await this.readFile(sessionId)).filter(
-        (diagnostic) => diagnostic.recoverable.runId !== runId,
-      );
-      const contents =
-        retained.length === 0 ? "" : `${retained.map((item) => JSON.stringify(item)).join("\n")}\n`;
-      await writeTextAtomic(
-        this.persistence.sessionFile(sessionId, "diagnostics.ndjson"),
-        contents,
-      );
+      await writeTextAtomic(this.persistence.sessionFile(sessionId, "diagnostics.ndjson"), "");
     });
   }
 }

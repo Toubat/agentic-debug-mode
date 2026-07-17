@@ -2,14 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { EvidenceDiagnostic } from "./diagnostic";
 import type { JsonValue, NormalizedEvent } from "./event";
 import { redactSecrets } from "./redaction";
-import type { Run } from "./run";
-import type { Session } from "./session";
 
 export interface EventValidationContext {
   receivedAt: number;
-  run: Run;
   sequence: number;
-  session: Session;
 }
 
 export interface EventValidationResult {
@@ -54,7 +50,6 @@ function recoverable(raw: Record<string, unknown>) {
   return {
     hypothesisId: typeof raw.hypothesisId === "string" ? raw.hypothesisId : undefined,
     location: typeof raw.location === "string" ? raw.location : undefined,
-    runId: typeof raw.runId === "string" ? raw.runId : undefined,
   };
 }
 
@@ -89,9 +84,6 @@ export function validateAndNormalizeEvent(
   }
   const raw = value as Record<string, unknown>;
   const valid =
-    raw.schemaVersion === 1 &&
-    raw.sessionId === context.session.id &&
-    raw.runId === context.run.id &&
     typeof raw.hypothesisId === "string" &&
     raw.hypothesisId.length > 0 &&
     typeof raw.timestamp === "number" &&
@@ -128,24 +120,10 @@ export function validateAndNormalizeEvent(
     location: raw.location as string,
     message: raw.message as string,
     receivedAt: context.receivedAt,
-    runId: context.run.id,
-    schemaVersion: 1,
     sequence: context.sequence,
-    sessionId: context.session.id,
     timestamp: raw.timestamp as number,
   };
   const diagnostics: EvidenceDiagnostic[] = [];
-  if (!context.run.hypothesisIds.includes(event.hypothesisId)) {
-    diagnostics.push({
-      ...diagnostic(
-        "UNDECLARED_HYPOTHESIS_ID",
-        `Hypothesis ${event.hypothesisId} is not declared for run ${context.run.id}.`,
-        raw,
-        context.receivedAt,
-      ),
-      eventId: event.id,
-    });
-  }
   if (redaction.redactedPaths.length > 0) {
     diagnostics.push({
       ...diagnostic(

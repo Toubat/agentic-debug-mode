@@ -18,21 +18,12 @@ function diagnosticsWarnings(diagnostics: EvidenceDiagnostic[]): Warning[] {
   const malformed = diagnostics.filter(
     (item) => item.reason === "INVALID_JSON" || item.reason === "INVALID_SCHEMA",
   ).length;
-  const undeclared = diagnostics.filter(
-    (item) => item.reason === "UNDECLARED_HYPOTHESIS_ID",
-  ).length;
   const redacted = diagnostics.filter((item) => item.reason === "SECRET_REDACTED").length;
   const warnings: Warning[] = [];
   if (malformed > 0) {
     warnings.push({
       code: "MALFORMED_RECORDS",
       message: `${malformed} malformed records were excluded; run debug-mode status for diagnostics.`,
-    });
-  }
-  if (undeclared > 0) {
-    warnings.push({
-      code: "UNDECLARED_HYPOTHESIS_ID",
-      message: `${undeclared} events used undeclared hypothesis IDs.`,
     });
   }
   if (redacted > 0) {

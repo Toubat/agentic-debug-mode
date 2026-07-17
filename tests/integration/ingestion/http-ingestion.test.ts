@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 describe("HTTP ingestion", () => {
-  test("creates a scoped run and normalizes an authenticated capability event", async () => {
+  test("creates a session and normalizes an event", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);
     const connection = await ensureDaemon({ homeDirectory: home });
@@ -29,11 +29,7 @@ describe("HTTP ingestion", () => {
       const createdResponse = await fetch(
         `http://${connection.host}:${connection.port}/v1/control/sessions`,
         {
-          body: JSON.stringify({
-            hypothesisIds: ["H1", "H2"],
-            runId: "baseline",
-            workspace: "/workspace/project",
-          }),
+          body: JSON.stringify({}),
           headers: controlHeaders,
           method: "POST",
         },
@@ -41,7 +37,6 @@ describe("HTTP ingestion", () => {
       expect(createdResponse.status).toBe(201);
       const created = (await createdResponse.json()) as {
         ingestUrl: string;
-        runId: string;
         sessionId: string;
       };
 
@@ -51,9 +46,6 @@ describe("HTTP ingestion", () => {
           hypothesisId: "H1",
           location: "src/cart.ts:84",
           message: "Before discount calculation",
-          runId: created.runId,
-          schemaVersion: 1,
-          sessionId: created.sessionId,
           timestamp: 1_784_310_000_123,
         }),
         headers: { "Content-Type": "application/json" },
@@ -61,10 +53,7 @@ describe("HTTP ingestion", () => {
       });
       expect(ingestResponse.status).toBe(202);
 
-      const events = await new EventStore(await Persistence.open(home)).read(
-        created.sessionId,
-        created.runId,
-      );
+      const events = await new EventStore(await Persistence.open(home)).read(created.sessionId);
       expect(events).toEqual([
         {
           data: { subtotal: 9_000 },
@@ -73,10 +62,7 @@ describe("HTTP ingestion", () => {
           location: "src/cart.ts:84",
           message: "Before discount calculation",
           receivedAt: expect.any(Number),
-          runId: "baseline",
-          schemaVersion: 1,
           sequence: 1,
-          sessionId: created.sessionId,
           timestamp: 1_784_310_000_123,
         },
       ]);
@@ -94,11 +80,7 @@ describe("HTTP ingestion", () => {
       const createdResponse = await fetch(
         `http://${connection.host}:${connection.port}/v1/control/sessions`,
         {
-          body: JSON.stringify({
-            hypothesisIds: ["H1"],
-            runId: "baseline",
-            workspace: "/workspace/project",
-          }),
+          body: JSON.stringify({}),
           headers: {
             Authorization: `Bearer ${connection.controlToken}`,
             "Content-Type": "application/json",
@@ -108,7 +90,6 @@ describe("HTTP ingestion", () => {
       );
       const created = (await createdResponse.json()) as {
         ingestUrl: string;
-        runId: string;
         sessionId: string;
       };
       const event = {
@@ -117,9 +98,6 @@ describe("HTTP ingestion", () => {
         id: "caller-event-1",
         location: "src/retry.ts:10",
         message: "Retried event",
-        runId: created.runId,
-        schemaVersion: 1,
-        sessionId: created.sessionId,
         timestamp: 1_784_310_000_123,
       };
 
@@ -139,6 +117,54 @@ describe("HTTP ingestion", () => {
       expect(
         await new EventStore(await Persistence.open(home)).read(created.sessionId),
       ).toHaveLength(1);
+    } finally {
+      await requestDaemonShutdown(connection);
+    }
+  });
+
+  test("routes probe payloads to their session", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
+    temporaryDirectories.push(home);
+    const connection = await ensureDaemon({ homeDirectory: home });
+    const controlHeaders = {
+      Authorization: `Bearer ${connection.controlToken}`,
+      "Content-Type": "application/json",
+    };
+
+    try {
+      const createdResponse = await fetch(
+        `http://${connection.host}:${connection.port}/v1/control/sessions`,
+        {
+          body: JSON.stringify({}),
+          headers: controlHeaders,
+          method: "POST",
+        },
+      );
+      const created = (await createdResponse.json()) as {
+        ingestUrl: string;
+        sessionId: string;
+      };
+
+      const ingestResponse = await fetch(created.ingestUrl, {
+        body: JSON.stringify({
+          data: { fixed: true },
+          hypothesisId: "H1",
+          location: "src/cart.ts:84",
+          message: "Existing probe after fix",
+          timestamp: 1_784_310_000_124,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      expect(ingestResponse.status).toBe(202);
+
+      const events = new EventStore(await Persistence.open(home));
+      expect(await events.read(created.sessionId)).toEqual([
+        expect.objectContaining({
+          data: { fixed: true },
+          message: "Existing probe after fix",
+        }),
+      ]);
     } finally {
       await requestDaemonShutdown(connection);
     }
