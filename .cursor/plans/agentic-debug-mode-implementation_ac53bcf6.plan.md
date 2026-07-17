@@ -28,7 +28,7 @@ todos:
     status: completed
   - id: release
     content: Build cross-platform artifacts, npm/Homebrew packaging, CI, and system tests
-    status: in_progress
+    status: completed
 isProject: false
 ---
 
