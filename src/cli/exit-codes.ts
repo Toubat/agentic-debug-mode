@@ -9,6 +9,7 @@ export const EXIT_CODE = {
 } as const;
 
 const ERROR_EXIT_CODES: Record<string, number> = {
+  COLLECTION_REQUIRED: EXIT_CODE.invalidArguments,
   DAEMON_UNAVAILABLE: EXIT_CODE.daemonUnavailable,
   EVIDENCE_MALFORMED: EXIT_CODE.evidenceMalformed,
   INVALID_ARGUMENTS: EXIT_CODE.invalidArguments,

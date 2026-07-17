@@ -123,6 +123,10 @@ function scalarText(value: unknown): string {
   return value === null ? "null" : String(value);
 }
 
+function scalarValueText(value: unknown): string {
+  return typeof value === "string" ? JSON.stringify(value) : scalarText(value);
+}
+
 function renderRows(headers: string[], rows: string[][]): string[] {
   const widths = headers.map((header, index) =>
     Math.max(header.length, ...rows.map((row) => row[index]?.length ?? 0)),
@@ -145,14 +149,13 @@ function renderRows(headers: string[], rows: string[][]): string[] {
 
 function renderQueryResults(results: unknown[]): string[] {
   if (results.length === 0) {
-    return ["results", "  (none)"];
+    return ["No values produced"];
   }
   if (results.every(isScalar)) {
     return [
-      "results",
       ...renderRows(
-        ["VALUE"],
-        results.map((value) => [scalarText(value)]),
+        ["INDEX", "VALUE"],
+        results.map((value, index) => [String(index + 1), scalarValueText(value)]),
       ),
     ];
   }
@@ -174,7 +177,6 @@ function renderQueryResults(results: unknown[]): string[] {
       )
     ) {
       return [
-        "results",
         ...renderRows(
           keys.map((key) => key.toUpperCase()),
           objects.map((object) => keys.map((key) => scalarText(object[key]))),
@@ -182,7 +184,10 @@ function renderQueryResults(results: unknown[]): string[] {
       ];
     }
   }
-  return ["results", ...renderValue(results)];
+  return results.flatMap((value, index) => [
+    `RESULT ${index + 1} OF ${results.length}`,
+    ...JSON.stringify(value, null, 2).split("\n"),
+  ]);
 }
 
 function renderData(result: CommandResult): string[] {
@@ -197,12 +202,8 @@ function renderData(result: CommandResult): string[] {
   ) {
     return renderLogTable(result.data.records);
   }
-  if (
-    result.command === "query" &&
-    "results" in result.data &&
-    Array.isArray(result.data.results)
-  ) {
-    return renderQueryResults(result.data.results);
+  if (result.command === "query" && "rows" in result.data && Array.isArray(result.data.rows)) {
+    return renderQueryResults(result.data.rows);
   }
 
   return Object.entries(result.data).flatMap(([key, value]) => [key, ...renderValue(value)]);

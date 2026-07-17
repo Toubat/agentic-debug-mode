@@ -87,10 +87,10 @@ describe("command result rendering", () => {
   });
 
   test("query renders homogeneous flat objects as a table", () => {
-    const result: CommandResult<{ results: unknown[] }> = {
+    const result: CommandResult<{ rows: unknown[] }> = {
       command: "query",
       data: {
-        results: [
+        rows: [
           { count: 2, hypothesisId: "H1" },
           { count: 1, hypothesisId: "H2" },
         ],
@@ -112,9 +112,9 @@ describe("command result rendering", () => {
   });
 
   test("query keeps nested heterogeneous results as pretty JSON", () => {
-    const result: CommandResult<{ results: unknown[] }> = {
+    const result: CommandResult<{ rows: unknown[] }> = {
       command: "query",
-      data: { results: [{ nested: { value: 1 } }, ["other"]] },
+      data: { rows: [{ nested: { value: 1 } }, ["other"]] },
       hints: [],
       ok: true,
       partial: false,
@@ -126,5 +126,23 @@ describe("command result rendering", () => {
 
     expect(renderPretty(result)).toContain('"nested": {');
     expect(renderPretty(result)).toContain('"other"');
+  });
+
+  test("query renders indexed JSON scalars and an explicit empty state", () => {
+    const scalars: CommandResult<{ rows: unknown[] }> = {
+      command: "query",
+      data: { rows: ["1", 1, null] },
+      hints: [],
+      ok: true,
+      partial: false,
+      schemaVersion: 1,
+      scope: { runId: "baseline", sessionId: "session-1" },
+      statistics: { producedValues: 3 },
+      warnings: [],
+    };
+    const empty = { ...scalars, data: { rows: [] } };
+
+    expect(renderPretty(scalars)).toContain('INDEX  VALUE\n1      "1"\n2      1\n3      null');
+    expect(renderPretty(empty)).toContain("No values produced");
   });
 });

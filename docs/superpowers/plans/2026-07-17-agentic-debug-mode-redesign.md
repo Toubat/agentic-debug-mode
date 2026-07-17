@@ -340,7 +340,7 @@ semantic exit `2` without Commander terminating the process.
 - [ ] **Step 5: Delete the custom parser and removed dispatch paths**
 
 Remove `start`, `probe`, `run begin`, `clear`, and `daemon stop` dispatch. Keep internal
-`__daemon`, `__query-native`, and native smoke paths outside Commander.
+`__daemon` and native smoke paths outside Commander.
 
 - [ ] **Step 6: Run contracts and standalone CLI help**
 
@@ -556,7 +556,7 @@ git push
 - Modify: `src/commands/query.ts`
 - Modify: `src/commands/status.ts`
 - Modify: `src/cli/snapshot-cursor.ts`
-- Modify: `src/cli/query-runner.ts`
+- Delete the obsolete subprocess query runner.
 - Modify: `src/native/query.ts`
 - Modify: `native/query/src/lib.rs`
 - Modify: `tests/unit/cursor.test.ts`
