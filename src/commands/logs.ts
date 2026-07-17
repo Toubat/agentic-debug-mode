@@ -10,8 +10,6 @@ import { optionInteger, optionString, optionStrings } from "./options";
 interface LogsResponse {
   diagnostics: EvidenceDiagnostic[];
   events: NormalizedEvent[];
-  runId: string;
-  workspace: string;
 }
 
 function diagnosticsWarnings(diagnostics: EvidenceDiagnostic[]): Warning[] {
@@ -38,7 +36,6 @@ function diagnosticsWarnings(diagnostics: EvidenceDiagnostic[]): Warning[] {
 function pageCommand(
   args: ParsedArgs,
   sessionId: string,
-  runId: string,
   offset: number,
   limit: number,
   snapshot: string,
@@ -46,15 +43,10 @@ function pageCommand(
   const parts = [
     "debug-mode logs",
     `--session ${sessionId}`,
-    `--run-id ${runId}`,
     `--offset ${offset}`,
     `--limit ${limit}`,
     `--snapshot ${snapshot}`,
   ];
-  const workspace = optionString(args.options, "workspace");
-  if (workspace) {
-    parts.push(`--workspace ${JSON.stringify(workspace)}`);
-  }
   for (const hypothesis of optionStrings(args.options, "hypothesis")) {
     parts.push(`--hypothesis ${hypothesis}`);
   }
@@ -66,14 +58,13 @@ function pageCommand(
 
 export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
   const sessionId = optionString(args.options, "session");
-  const runId = optionString(args.options, "run-id");
   const offset = optionInteger(args.options, "offset", 0);
   const limit = optionInteger(args.options, "limit", 100);
-  if (!sessionId || !runId || offset === undefined || limit === undefined || limit < 1) {
+  if (!sessionId || offset === undefined || limit === undefined || limit < 1) {
     return {
       error: {
         code: "INVALID_ARGUMENTS",
-        hint: "Provide --session, --run-id, a non-negative --offset, and a positive --limit.",
+        hint: "Provide --session, a non-negative --offset, and a positive --limit.",
         message: "The logs command has invalid scope or pagination options.",
       },
       ok: false,
@@ -87,23 +78,11 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
     });
     const response = await requestDaemonControl<LogsResponse>(
       daemon,
-      `/v1/control/sessions/${sessionId}/logs?runId=${encodeURIComponent(runId)}`,
+      `/v1/control/sessions/${sessionId}/logs`,
     );
-    const workspace = optionString(args.options, "workspace");
-    if (workspace && workspace !== response.workspace) {
-      return {
-        error: {
-          code: "SESSION_NOT_FOUND",
-          message: `Session ${sessionId} does not belong to workspace ${workspace}.`,
-        },
-        ok: false,
-        schemaVersion: 1,
-      };
-    }
     const requestedSnapshot = optionString(args.options, "snapshot");
     const watermark = requestedSnapshot
       ? verifySnapshotCursor(daemon.controlToken, requestedSnapshot, {
-          runId,
           sessionId,
         }).watermark
       : response.events.reduce((maximum, event) => Math.max(maximum, event.sequence), 0);
@@ -111,7 +90,6 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
       requestedSnapshot ??
       createSnapshotCursor(daemon.controlToken, {
         issuedAt: Date.now(),
-        runId,
         sessionId,
         watermark,
       });
@@ -127,21 +105,21 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
       const previousOffset = Math.max(0, offset - limit);
       hints.push({
         action: "previous-page",
-        command: pageCommand(args, sessionId, runId, previousOffset, limit, snapshot),
+        command: pageCommand(args, sessionId, previousOffset, limit, snapshot),
         message: "Read the previous page.",
       });
     }
     if (offset + records.length < filtered.length) {
       hints.push({
         action: "next-page",
-        command: pageCommand(args, sessionId, runId, offset + limit, limit, snapshot),
+        command: pageCommand(args, sessionId, offset + limit, limit, snapshot),
         message: "Read the next page.",
       });
     }
     if (response.diagnostics.length > 0) {
       hints.push({
         action: "status",
-        command: `debug-mode status --session ${sessionId} --run-id ${runId}`,
+        command: `debug-mode status --session ${sessionId}`,
         message: "Inspect all malformed and abnormal evidence diagnostics.",
       });
     }
@@ -154,7 +132,6 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
       schemaVersion: 1,
       scope: {
         hypothesisFilter: hypothesisFilter.length === 0 ? null : hypothesisFilter,
-        runId,
         sessionId,
       },
       statistics: {

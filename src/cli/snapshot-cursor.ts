@@ -2,7 +2,6 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export interface SnapshotCursorPayload {
   issuedAt: number;
-  runId: string;
   sessionId: string;
   watermark: number;
 }
@@ -19,7 +18,7 @@ export function createSnapshotCursor(secret: string, payload: SnapshotCursorPayl
 export function verifySnapshotCursor(
   secret: string,
   cursor: string,
-  scope: Pick<SnapshotCursorPayload, "runId" | "sessionId">,
+  scope: Pick<SnapshotCursorPayload, "sessionId">,
 ): SnapshotCursorPayload {
   const parts = cursor.split(".");
   const encoded = parts[0];
@@ -46,7 +45,6 @@ export function verifySnapshotCursor(
   if (
     payload.version !== 1 ||
     typeof payload.issuedAt !== "number" ||
-    typeof payload.runId !== "string" ||
     typeof payload.sessionId !== "string" ||
     typeof payload.watermark !== "number" ||
     !Number.isSafeInteger(payload.watermark) ||
@@ -54,12 +52,11 @@ export function verifySnapshotCursor(
   ) {
     throw new Error("Invalid snapshot cursor");
   }
-  if (payload.runId !== scope.runId || payload.sessionId !== scope.sessionId) {
+  if (payload.sessionId !== scope.sessionId) {
     throw new Error("Snapshot cursor scope does not match");
   }
   return {
     issuedAt: payload.issuedAt,
-    runId: payload.runId,
     sessionId: payload.sessionId,
     watermark: payload.watermark,
   };

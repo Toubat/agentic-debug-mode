@@ -6,27 +6,22 @@ import { runQueryWithTimeout } from "../cli/query-runner";
 import { createSnapshotCursor, verifySnapshotCursor } from "../cli/snapshot-cursor";
 import { Persistence } from "../daemon/persistence";
 import type { EvidenceDiagnostic } from "../domain/diagnostic";
-import type { Session } from "../domain/session";
 import { optionInteger, optionString, optionStrings } from "./options";
 
 interface QueryInputResponse {
   diagnostics: EvidenceDiagnostic[];
   eventCount: number;
-  hypothesisIds: string[];
-  runId: string;
-  session: Session;
   watermark: number;
 }
 
 export async function queryCommand(args: ParsedArgs): Promise<CommandOutput> {
   const sessionId = optionString(args.options, "session");
-  const runId = optionString(args.options, "run-id");
   const program = args.positionals[0];
-  if (!sessionId || !runId || !program || program.length > 4_096) {
+  if (!sessionId || !program || program.length > 4_096) {
     return {
       error: {
         code: "INVALID_ARGUMENTS",
-        hint: "Provide --session, --run-id, and one bounded jaq program.",
+        hint: "Provide --session and one bounded jaq program.",
         message: "The query command is missing a valid scope or program.",
       },
       ok: false,
@@ -41,13 +36,12 @@ export async function queryCommand(args: ParsedArgs): Promise<CommandOutput> {
     });
     const input = await requestDaemonControl<QueryInputResponse>(
       daemon,
-      `/v1/control/sessions/${sessionId}/status?runId=${encodeURIComponent(runId)}`,
+      `/v1/control/sessions/${sessionId}/status`,
     );
     const hypothesisFilter = optionStrings(args.options, "hypothesis");
     const requestedSnapshot = optionString(args.options, "snapshot");
     const watermark = requestedSnapshot
       ? verifySnapshotCursor(daemon.controlToken, requestedSnapshot, {
-          runId,
           sessionId,
         }).watermark
       : input.watermark;
@@ -55,7 +49,6 @@ export async function queryCommand(args: ParsedArgs): Promise<CommandOutput> {
       requestedSnapshot ??
       createSnapshotCursor(daemon.controlToken, {
         issuedAt: Date.now(),
-        runId,
         sessionId,
         watermark,
       });
@@ -77,7 +70,6 @@ export async function queryCommand(args: ParsedArgs): Promise<CommandOutput> {
         hypotheses: hypothesisFilter,
         path: persistence.sessionFile(sessionId, "events.ndjson"),
         program,
-        runId,
         slurp,
         watermark,
       },
@@ -102,7 +94,7 @@ export async function queryCommand(args: ParsedArgs): Promise<CommandOutput> {
           : [
               {
                 action: "status",
-                command: `debug-mode status --session ${sessionId} --run-id ${runId}`,
+                command: `debug-mode status --session ${sessionId}`,
                 message: "Inspect all evidence diagnostics.",
               },
             ],
@@ -111,7 +103,6 @@ export async function queryCommand(args: ParsedArgs): Promise<CommandOutput> {
       schemaVersion: 1,
       scope: {
         hypothesisFilter: hypothesisFilter.length === 0 ? null : hypothesisFilter,
-        runId,
         sessionId,
       },
       statistics: {

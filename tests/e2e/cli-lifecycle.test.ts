@@ -139,7 +139,6 @@ describe("CLI lifecycle", () => {
           body: JSON.stringify({
             data: { index },
             hypothesisId: "H1",
-            id: `event-${index}`,
             location: `src/example.ts:${index}`,
             message: "Observed",
             timestamp: index,
@@ -153,8 +152,6 @@ describe("CLI lifecycle", () => {
         "logs",
         "--session",
         sessionId ?? "",
-        "--run-id",
-        "baseline",
         "--offset",
         "0",
         "--limit",
@@ -171,6 +168,14 @@ describe("CLI lifecycle", () => {
       });
       expect(output.data.records).toHaveLength(1);
       expect(output.hints.map((hint) => hint.action)).toContain("next-page");
+      expect(output.scope).toEqual({
+        hypothesisFilter: null,
+        sessionId,
+      });
+
+      const status = await runCli(home, ["status", "--session", sessionId ?? "", "--json"]);
+      expect(status.exitCode, status.stderr).toBe(0);
+      expect((JSON.parse(status.stdout) as CommandResult).scope).toEqual({ sessionId });
     } finally {
       await requestDaemonShutdown(connection);
     }

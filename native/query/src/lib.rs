@@ -71,7 +71,6 @@ pub fn run_jaq_batch(program: String, inputs_json: String, slurp: bool) -> Resul
 pub fn run_jaq_file(
     program: String,
     path: String,
-    run_id: String,
     hypotheses_json: String,
     watermark: f64,
     slurp: bool,
@@ -107,8 +106,6 @@ pub fn run_jaq_file(
             continue;
         }
         let scope: serde_json::Value = serde_json::from_str(&line).map_err(query_error)?;
-        let matches_run =
-            scope.get("runId").and_then(serde_json::Value::as_str) == Some(run_id.as_str());
         let hypothesis = scope
             .get("hypothesisId")
             .and_then(serde_json::Value::as_str);
@@ -118,7 +115,7 @@ pub fn run_jaq_file(
             .unwrap_or(f64::INFINITY);
         let matches_hypothesis = hypotheses.is_empty()
             || hypothesis.is_some_and(|id| hypotheses.iter().any(|h| h == id));
-        if !matches_run || sequence > watermark {
+        if sequence > watermark {
             continue;
         }
         total_records += 1;
@@ -217,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn streams_only_the_requested_file_scope() {
+    fn streams_only_the_requested_session_filters() {
         let path = std::env::temp_dir().join(format!(
             "agentic-debug-mode-query-{}.ndjson",
             std::process::id()
@@ -225,9 +222,9 @@ mod tests {
         fs::write(
             &path,
             concat!(
-                "{\"id\":\"a\",\"runId\":\"baseline\",\"hypothesisId\":\"H1\",\"sequence\":1}\n",
-                "{\"id\":\"b\",\"runId\":\"other\",\"hypothesisId\":\"H1\",\"sequence\":2}\n",
-                "{\"id\":\"c\",\"runId\":\"baseline\",\"hypothesisId\":\"H2\",\"sequence\":3}\n"
+                "{\"id\":\"a\",\"hypothesisId\":\"H1\",\"sequence\":1}\n",
+                "{\"id\":\"b\",\"hypothesisId\":\"H1\",\"sequence\":2}\n",
+                "{\"id\":\"c\",\"hypothesisId\":\"H2\",\"sequence\":3}\n"
             ),
         )
         .unwrap();
@@ -235,7 +232,6 @@ mod tests {
         let output = run_jaq_file(
             ".id".to_owned(),
             path.to_string_lossy().into_owned(),
-            "baseline".to_owned(),
             r#"["H1"]"#.to_owned(),
             2.0,
             false,
@@ -245,7 +241,7 @@ mod tests {
 
         assert_eq!(
             output,
-            r#"{"results":["a"],"scannedRecords":1,"totalRecords":1}"#
+            r#"{"results":["a","b"],"scannedRecords":2,"totalRecords":2}"#
         );
     }
 }

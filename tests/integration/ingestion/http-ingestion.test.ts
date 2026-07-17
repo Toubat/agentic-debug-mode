@@ -71,7 +71,7 @@ describe("HTTP ingestion", () => {
     }
   });
 
-  test("deduplicates retries that carry the same caller event ID", async () => {
+  test("ignores caller event IDs and assigns normalized IDs", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);
     const connection = await ensureDaemon({ homeDirectory: home });
@@ -114,9 +114,10 @@ describe("HTTP ingestion", () => {
         }),
       ]);
 
-      expect(
-        await new EventStore(await Persistence.open(home)).read(created.sessionId),
-      ).toHaveLength(1);
+      const events = await new EventStore(await Persistence.open(home)).read(created.sessionId);
+      expect(events).toHaveLength(2);
+      expect(events.map((stored) => stored.id)).not.toContain("caller-event-1");
+      expect(new Set(events.map((stored) => stored.id))).toHaveLength(2);
     } finally {
       await requestDaemonShutdown(connection);
     }

@@ -4,7 +4,6 @@ interface QueryAddon {
   runJaqFile(
     program: string,
     path: string,
-    runId: string,
     hypothesesJson: string,
     watermark: number,
     slurp: boolean,
@@ -30,12 +29,11 @@ export function runJaqBatch(program: string, inputs: unknown[], slurp: boolean):
 export function runJaqFile(
   program: string,
   path: string,
-  runId: string,
   hypotheses: string[],
   watermark: number,
   slurp: boolean,
 ): FileQueryResult {
   return JSON.parse(
-    addon.runJaqFile(program, path, runId, JSON.stringify(hypotheses), watermark, slurp),
+    addon.runJaqFile(program, path, JSON.stringify(hypotheses), watermark, slurp),
   ) as FileQueryResult;
 }

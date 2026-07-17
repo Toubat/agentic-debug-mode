@@ -6,7 +6,6 @@ export interface QueryWorkerInput {
   hypotheses: string[];
   path: string;
   program: string;
-  runId: string;
   slurp: boolean;
   watermark: number;
 }

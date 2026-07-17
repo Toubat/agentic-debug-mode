@@ -108,10 +108,7 @@ export function validateAndNormalizeEvent(
     };
   }
 
-  const id =
-    typeof raw.id === "string" && raw.id.length > 0 && raw.id.length <= 128
-      ? raw.id
-      : `evt_${randomUUID()}`;
+  const id = `evt_${randomUUID()}`;
   const redaction = redactSecrets(raw.data as JsonValue);
   const event: NormalizedEvent = {
     data: redaction.value,

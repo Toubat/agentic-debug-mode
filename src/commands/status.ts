@@ -9,19 +9,16 @@ import { optionString } from "./options";
 interface StatusResponse {
   diagnostics: EvidenceDiagnostic[];
   eventCount: number;
-  hypothesisIds: string[];
-  runId: string;
   session: Session;
 }
 
 export async function statusCommand(args: ParsedArgs): Promise<CommandOutput> {
   const sessionId = optionString(args.options, "session");
-  const runId = optionString(args.options, "run-id");
-  if (!sessionId || !runId) {
+  if (!sessionId) {
     return {
       error: {
         code: "INVALID_ARGUMENTS",
-        message: "Provide explicit --session and --run-id options.",
+        message: "Provide an explicit --session option.",
       },
       ok: false,
       schemaVersion: 1,
@@ -33,7 +30,7 @@ export async function statusCommand(args: ParsedArgs): Promise<CommandOutput> {
     });
     const response = await requestDaemonControl<StatusResponse>(
       daemon,
-      `/v1/control/sessions/${sessionId}/status?runId=${encodeURIComponent(runId)}`,
+      `/v1/control/sessions/${sessionId}/status`,
     );
     const warnings: Warning[] =
       response.diagnostics.length === 0
@@ -56,16 +53,14 @@ export async function statusCommand(args: ParsedArgs): Promise<CommandOutput> {
           : [
               {
                 action: "clear",
-                command: `debug-mode clear --session ${sessionId} --run-id ${runId}`,
-                message: "Fix the listed emitters, clear this run, and reproduce.",
+                command: `debug-mode clear --session ${sessionId}`,
+                message: "Fix the listed emitters, clear this session, and reproduce.",
               },
             ],
       ok: true,
       partial: false,
       schemaVersion: 1,
       scope: {
-        hypothesisIds: response.hypothesisIds,
-        runId,
         sessionId,
       },
       statistics: {

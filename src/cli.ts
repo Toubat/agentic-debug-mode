@@ -19,7 +19,6 @@ async function main(): Promise<number> {
         runJaqFile(
           input.program,
           input.path,
-          input.runId,
           input.hypotheses,
           input.watermark,
           input.slurp,
