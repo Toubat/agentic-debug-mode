@@ -83,7 +83,7 @@ export class SessionRegistry {
         (session) => session.createdAt >= start && session.createdAt < end,
       );
     }
-    const limit = options.all ? undefined : (options.limit ?? 20);
+    const limit = options.limit ?? (options.all ? undefined : 20);
     if (limit !== undefined) {
       filtered = filtered.slice(0, limit);
     }

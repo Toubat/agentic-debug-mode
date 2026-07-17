@@ -71,15 +71,14 @@ describe("session persistence", () => {
     expect(limited[0]).toEqual(listed[0]);
   });
 
-  test("all-session listing includes event counts without a limit", async () => {
+  test("all-session listing preserves an explicit limit and includes event counts", async () => {
     const { events, sessions } = await fixture();
-    const first = await sessions.create(1);
+    await sessions.create(1);
     const second = await sessions.create(2);
     await events.append(second.id, event("second"));
 
-    expect(await sessions.list({ all: true })).toEqual([
+    expect(await sessions.list({ all: true, limit: 1 })).toEqual([
       { createdAt: second.createdAt, eventCount: 1, id: second.id },
-      { createdAt: first.createdAt, eventCount: 0, id: first.id },
     ]);
   });
 
