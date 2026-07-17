@@ -16,10 +16,10 @@ todos:
     status: completed
   - id: ingestion
     content: Add authenticated control APIs and normalized HTTP/direct ingestion
-    status: in_progress
+    status: completed
   - id: cli-slice
     content: Ship start, probe, logs, status, clear, run, sessions, and stop with TypeScript probes
-    status: pending
+    status: in_progress
   - id: jaq-query
     content: Embed jaq with streaming/slurp queries, secure cursors, and shape-aware output
     status: pending

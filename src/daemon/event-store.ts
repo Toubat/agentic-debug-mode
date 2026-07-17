@@ -4,6 +4,7 @@ import { writeTextAtomic } from "../platform/atomic-file";
 import type { Persistence } from "./persistence";
 
 export class EventStore {
+  private readonly knownIds = new Map<string, Set<string>>();
   private readonly operations = new Map<string, Promise<void>>();
 
   constructor(private readonly persistence: Persistence) {}
@@ -36,19 +37,32 @@ export class EventStore {
       .map((line) => JSON.parse(line) as NormalizedEvent);
   }
 
-  async append(event: NormalizedEvent): Promise<void> {
+  async append(event: NormalizedEvent): Promise<boolean> {
+    let appended = false;
     await this.enqueue(event.sessionId, async () => {
+      let ids = this.knownIds.get(event.sessionId);
+      if (!ids) {
+        ids = new Set((await this.readFile(event.sessionId)).map((item) => item.id));
+        this.knownIds.set(event.sessionId, ids);
+      }
+      if (ids.has(event.id)) {
+        return;
+      }
       await appendFile(
         this.persistence.sessionFile(event.sessionId, "events.ndjson"),
         `${JSON.stringify(event)}\n`,
         { encoding: "utf8", mode: 0o600 },
       );
+      ids.add(event.id);
+      appended = true;
     });
+    return appended;
   }
 
   async clearRun(sessionId: string, runId: string): Promise<void> {
     await this.enqueue(sessionId, async () => {
       const retained = (await this.readFile(sessionId)).filter((event) => event.runId !== runId);
+      this.knownIds.set(sessionId, new Set(retained.map((event) => event.id)));
       const contents =
         retained.length === 0
           ? ""

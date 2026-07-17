@@ -3,6 +3,7 @@ import { ensurePrivateDirectory } from "../platform/permissions";
 import { initializeStateRoot } from "../platform/state-root";
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
+const SAFE_FILENAME = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/;
 
 export class Persistence {
   private constructor(readonly stateRoot: string) {}
@@ -23,7 +24,7 @@ export class Persistence {
   }
 
   sessionFile(sessionId: string, filename: string): string {
-    if (!SAFE_ID.test(filename.replace(/\.[a-z]+$/, ""))) {
+    if (!SAFE_FILENAME.test(filename)) {
       throw new Error(`Invalid session filename: ${filename}`);
     }
     return join(this.sessionDirectory(sessionId), filename);

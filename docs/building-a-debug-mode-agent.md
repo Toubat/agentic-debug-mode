@@ -1272,6 +1272,7 @@ XDG directories, Application Support, or LocalAppData:
         ├── session.json
         ├── runs.json
         ├── incoming.ndjson
+        ├── incoming.cursor.json
         ├── events.ndjson
         └── diagnostics.ndjson
 ```

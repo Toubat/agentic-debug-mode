@@ -5,5 +5,6 @@ export interface Session {
   readonly workspace: string;
   readonly createdAt: number;
   readonly activeRunId: string;
+  readonly ingestCapability: string;
   readonly status: SessionStatus;
 }

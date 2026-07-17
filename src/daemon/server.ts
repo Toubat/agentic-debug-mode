@@ -1,6 +1,8 @@
 import packageJson from "../../package.json";
 import { inspectProcess } from "../native/system";
 import { isAuthorized } from "./auth";
+import type { ControlApi } from "./control-api";
+import type { IngestApi } from "./ingest-api";
 import {
   DAEMON_HOST,
   DAEMON_PROTOCOL_VERSION,
@@ -12,7 +14,9 @@ import { publishReadyCandidate, removeOwnedDaemonState, removeReadyCandidate } f
 
 export interface StartDaemonServerOptions {
   controlToken: string;
+  controlApi: ControlApi;
   getActiveSessionCount(): Promise<number>;
+  ingestApi: IngestApi;
   nonce: string;
   stateRoot: string;
 }
@@ -38,12 +42,17 @@ export async function startDaemonServer(
 
   server = Bun.serve({
     hostname: DAEMON_HOST,
+    maxRequestBodySize: 128 * 1024,
     port: 0,
     async fetch(request) {
+      const url = new URL(request.url);
+      const ingestResponse = await options.ingestApi.handle(request, url.pathname);
+      if (ingestResponse) {
+        return ingestResponse;
+      }
       if (!isAuthorized(request, options.controlToken)) {
         return Response.json({ error: "unauthorized" }, { status: 401 });
       }
-      const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/v1/control/health") {
         return Response.json({
           ...metadata,
@@ -55,6 +64,14 @@ export async function startDaemonServer(
           void stop();
         }, 10);
         return Response.json({ accepted: true }, { status: 202 });
+      }
+      const controlResponse = await options.controlApi.handle(
+        request,
+        url.pathname,
+        `http://${metadata.host}:${metadata.port}`,
+      );
+      if (controlResponse) {
+        return controlResponse;
       }
       return Response.json({ error: "not-found" }, { status: 404 });
     },
