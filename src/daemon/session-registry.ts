@@ -1,12 +1,32 @@
 import { randomUUID } from "node:crypto";
 import { readdir, rm } from "node:fs/promises";
 import type { Session } from "../domain/session";
-import { readJsonFile, writeJsonAtomic } from "../platform/atomic-file";
+import { readJsonFile, writeJsonAtomic, writeTextAtomic } from "../platform/atomic-file";
 import { ensurePrivateFile } from "../platform/permissions";
+import { DiagnosticStore } from "./diagnostic-store";
+import { EventStore } from "./event-store";
 import type { Persistence } from "./persistence";
+import { EventSequence } from "./sequence";
+
+export interface SessionSummary {
+  id: string;
+  createdAt: number;
+  eventCount: number;
+}
+
+export interface ListSessionsOptions {
+  all: boolean;
+  now?: Date;
+  limit?: number;
+}
 
 export class SessionRegistry {
-  constructor(private readonly persistence: Persistence) {}
+  constructor(
+    private readonly persistence: Persistence,
+    private readonly events = new EventStore(persistence),
+    private readonly diagnostics = new DiagnosticStore(persistence),
+    private readonly sequence = new EventSequence(events),
+  ) {}
 
   incomingPath(sessionId: string): string {
     return this.persistence.sessionFile(sessionId, "incoming.ndjson");
@@ -45,23 +65,71 @@ export class SessionRegistry {
     }
   }
 
-  async list(): Promise<Session[]> {
+  async list(options: ListSessionsOptions): Promise<SessionSummary[]> {
     const entries = await readdir(this.persistence.sessionsDirectory, {
       withFileTypes: true,
     });
     const sessions = await Promise.all(
       entries.filter((entry) => entry.isDirectory()).map((entry) => this.get(entry.name)),
     );
-    return sessions
+    let filtered = sessions
       .filter((session): session is Session => session !== undefined)
-      .sort((left, right) => left.createdAt - right.createdAt);
+      .sort((left, right) => right.createdAt - left.createdAt);
+    if (!options.all) {
+      const now = options.now ?? new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).valueOf();
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).valueOf();
+      filtered = filtered.filter(
+        (session) => session.createdAt >= start && session.createdAt < end,
+      );
+    }
+    const limit = options.all ? undefined : (options.limit ?? 20);
+    if (limit !== undefined) {
+      filtered = filtered.slice(0, limit);
+    }
+    return Promise.all(
+      filtered.map(async (session) => ({
+        createdAt: session.createdAt,
+        eventCount: (await this.events.read(session.id)).length,
+        id: session.id,
+      })),
+    );
+  }
+
+  async reset(sessionId: string): Promise<Session> {
+    return this.persistence.runSessionOperation(sessionId, async () => {
+      await this.persistence.rejectSessionSymbolicLinks(sessionId);
+      const session = await this.get(sessionId);
+      if (!session) {
+        throw new Error(`Session not found: ${sessionId}`);
+      }
+      const reset = Object.freeze({
+        ...session,
+        evidenceEpoch: randomUUID(),
+      });
+      await Promise.all([
+        this.events.clear(sessionId),
+        this.diagnostics.clear(sessionId),
+        writeTextAtomic(this.persistence.sessionFile(sessionId, "incoming.ndjson"), ""),
+        writeJsonAtomic(this.persistence.sessionFile(sessionId, "incoming.cursor.json"), {
+          offset: 0,
+        }),
+      ]);
+      await this.sequence.reset(sessionId);
+      await writeJsonAtomic(this.persistence.sessionFile(sessionId, "session.json"), reset);
+      return reset;
+    });
   }
 
   async remove(sessionId: string): Promise<boolean> {
-    if (!(await this.get(sessionId))) {
-      return false;
-    }
-    await rm(this.persistence.sessionDirectory(sessionId), { force: true, recursive: true });
-    return true;
+    return this.persistence.runSessionOperation(sessionId, async () => {
+      await this.persistence.rejectSessionSymbolicLinks(sessionId);
+      if (!(await this.get(sessionId))) {
+        return false;
+      }
+      await rm(this.persistence.sessionDirectory(sessionId), { force: true, recursive: true });
+      await this.sequence.reset(sessionId);
+      return true;
+    });
   }
 }

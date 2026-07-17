@@ -44,41 +44,45 @@ export class IngestionService {
   ) {}
 
   async recordInvalidJson(sessionId: string, message: string): Promise<boolean> {
-    const session = await this.sessions.get(sessionId);
-    if (!session) {
-      return false;
-    }
-    const diagnostic: EvidenceDiagnostic = {
-      diagnosticId: `diag_${randomUUID()}`,
-      message,
-      observedAt: Date.now(),
-      reason: "INVALID_JSON",
-      recoverable: {},
-      redactedPreview: "[redacted invalid JSON]",
-      suggestedAction:
-        "Inspect the generated probe serializer, correct it, reset the session, and reproduce.",
-    };
-    await this.diagnostics.append(session.id, [diagnostic]);
-    return true;
+    return this.events.runSessionOperation(sessionId, async () => {
+      const session = await this.sessions.get(sessionId);
+      if (!session) {
+        return false;
+      }
+      const diagnostic: EvidenceDiagnostic = {
+        diagnosticId: `diag_${randomUUID()}`,
+        message,
+        observedAt: Date.now(),
+        reason: "INVALID_JSON",
+        recoverable: {},
+        redactedPreview: "[redacted invalid JSON]",
+        suggestedAction:
+          "Inspect the generated probe serializer, correct it, reset the session, and reproduce.",
+      };
+      await this.diagnostics.append(session.id, [diagnostic]);
+      return true;
+    });
   }
 
   async ingest(sessionId: string, value: unknown): Promise<"accepted" | "invalid" | "not-found"> {
-    const session = await this.sessions.get(sessionId);
-    if (!session) {
-      return "not-found";
-    }
-    const result = validateAndNormalizeEvent(value, {
-      receivedAt: Date.now(),
-      sequence: 0,
-    });
-    if (!result.event) {
+    return this.events.runSessionOperation(sessionId, async () => {
+      const session = await this.sessions.get(sessionId);
+      if (!session) {
+        return "not-found";
+      }
+      const result = validateAndNormalizeEvent(value, {
+        receivedAt: Date.now(),
+        sequence: 0,
+      });
+      if (!result.event) {
+        await this.diagnostics.append(session.id, result.diagnostics);
+        return "invalid";
+      }
+      result.event.sequence = await this.sequence.next(session.id);
+      await this.events.append(session.id, result.event);
       await this.diagnostics.append(session.id, result.diagnostics);
-      return "invalid";
-    }
-    result.event.sequence = await this.sequence.next(session.id);
-    await this.events.append(session.id, result.event);
-    await this.diagnostics.append(session.id, result.diagnostics);
-    return "accepted";
+      return "accepted";
+    });
   }
 }
 

@@ -21,25 +21,11 @@ export interface EventPage {
 
 export class EventStore {
   private readonly knownIds = new Map<string, Set<string>>();
-  private readonly operations = new Map<string, Promise<void>>();
 
   constructor(private readonly persistence: Persistence) {}
 
-  private async enqueue<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this.operations.get(sessionId) ?? Promise.resolve();
-    const result = previous.then(operation);
-    const settled = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    this.operations.set(sessionId, settled);
-    try {
-      return await result;
-    } finally {
-      if (this.operations.get(sessionId) === settled) {
-        this.operations.delete(sessionId);
-      }
-    }
+  runSessionOperation<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+    return this.persistence.runSessionOperation(sessionId, operation);
   }
 
   private async readFile(sessionId: string): Promise<NormalizedEvent[]> {
@@ -55,7 +41,7 @@ export class EventStore {
 
   async append(sessionId: string, event: NormalizedEvent): Promise<boolean> {
     let appended = false;
-    await this.enqueue(sessionId, async () => {
+    await this.runSessionOperation(sessionId, async () => {
       let ids = this.knownIds.get(sessionId);
       if (!ids) {
         ids = new Set((await this.readFile(sessionId)).map((item) => item.id));
@@ -76,48 +62,52 @@ export class EventStore {
   }
 
   async clear(sessionId: string): Promise<void> {
-    await this.enqueue(sessionId, async () => {
+    await this.runSessionOperation(sessionId, async () => {
       this.knownIds.set(sessionId, new Set());
       await writeTextAtomic(this.persistence.sessionFile(sessionId, "events.ndjson"), "");
     });
   }
 
   async read(sessionId: string): Promise<NormalizedEvent[]> {
-    await (this.operations.get(sessionId) ?? Promise.resolve());
-    return this.readFile(sessionId);
+    return this.runSessionOperation(sessionId, () => this.readFile(sessionId));
   }
 
   async readPage(sessionId: string, options: EventPageOptions): Promise<EventPage> {
-    await (this.operations.get(sessionId) ?? Promise.resolve());
-    const records: NormalizedEvent[] = [];
-    const recordsByHypothesis: Record<string, number> = {};
-    let totalRecords = 0;
-    let watermark = options.watermark ?? 0;
-    const lines = createInterface({
-      crlfDelay: Number.POSITIVE_INFINITY,
-      input: createReadStream(this.persistence.sessionFile(sessionId, "events.ndjson"), {
-        encoding: "utf8",
-      }),
+    return this.runSessionOperation(sessionId, async () => {
+      const records: NormalizedEvent[] = [];
+      const recordsByHypothesis: Record<string, number> = {};
+      let totalRecords = 0;
+      let watermark = options.watermark ?? 0;
+      const lines = createInterface({
+        crlfDelay: Number.POSITIVE_INFINITY,
+        input: createReadStream(this.persistence.sessionFile(sessionId, "events.ndjson"), {
+          encoding: "utf8",
+        }),
+      });
+      for await (const line of lines) {
+        if (!line) {
+          continue;
+        }
+        const event = JSON.parse(line) as NormalizedEvent;
+        if (options.watermark === undefined) {
+          watermark = Math.max(watermark, event.sequence);
+        } else if (event.sequence > options.watermark) {
+          continue;
+        }
+        if (
+          options.hypothesisIds.length > 0 &&
+          !options.hypothesisIds.includes(event.hypothesisId)
+        ) {
+          continue;
+        }
+        recordsByHypothesis[event.hypothesisId] =
+          (recordsByHypothesis[event.hypothesisId] ?? 0) + 1;
+        if (totalRecords >= options.offset && records.length < options.limit) {
+          records.push(event);
+        }
+        totalRecords += 1;
+      }
+      return { records, recordsByHypothesis, totalRecords, watermark };
     });
-    for await (const line of lines) {
-      if (!line) {
-        continue;
-      }
-      const event = JSON.parse(line) as NormalizedEvent;
-      if (options.watermark === undefined) {
-        watermark = Math.max(watermark, event.sequence);
-      } else if (event.sequence > options.watermark) {
-        continue;
-      }
-      if (options.hypothesisIds.length > 0 && !options.hypothesisIds.includes(event.hypothesisId)) {
-        continue;
-      }
-      recordsByHypothesis[event.hypothesisId] = (recordsByHypothesis[event.hypothesisId] ?? 0) + 1;
-      if (totalRecords >= options.offset && records.length < options.limit) {
-        records.push(event);
-      }
-      totalRecords += 1;
-    }
-    return { records, recordsByHypothesis, totalRecords, watermark };
   }
 }

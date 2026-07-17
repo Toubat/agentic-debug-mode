@@ -4,26 +4,7 @@ import { writeTextAtomic } from "../platform/atomic-file";
 import type { Persistence } from "./persistence";
 
 export class DiagnosticStore {
-  private readonly operations = new Map<string, Promise<void>>();
-
   constructor(private readonly persistence: Persistence) {}
-
-  private async enqueue<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this.operations.get(sessionId) ?? Promise.resolve();
-    const result = previous.then(operation);
-    const settled = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    this.operations.set(sessionId, settled);
-    try {
-      return await result;
-    } finally {
-      if (this.operations.get(sessionId) === settled) {
-        this.operations.delete(sessionId);
-      }
-    }
-  }
 
   private async readFile(sessionId: string): Promise<EvidenceDiagnostic[]> {
     const contents = await readFile(
@@ -40,7 +21,7 @@ export class DiagnosticStore {
     if (diagnostics.length === 0) {
       return;
     }
-    await this.enqueue(sessionId, async () => {
+    await this.persistence.runSessionOperation(sessionId, async () => {
       await appendFile(
         this.persistence.sessionFile(sessionId, "diagnostics.ndjson"),
         `${diagnostics.map((item) => JSON.stringify(item)).join("\n")}\n`,
@@ -50,12 +31,11 @@ export class DiagnosticStore {
   }
 
   async read(sessionId: string): Promise<EvidenceDiagnostic[]> {
-    await (this.operations.get(sessionId) ?? Promise.resolve());
-    return this.readFile(sessionId);
+    return this.persistence.runSessionOperation(sessionId, () => this.readFile(sessionId));
   }
 
   async clear(sessionId: string): Promise<void> {
-    await this.enqueue(sessionId, async () => {
+    await this.persistence.runSessionOperation(sessionId, async () => {
       await writeTextAtomic(this.persistence.sessionFile(sessionId, "diagnostics.ndjson"), "");
     });
   }

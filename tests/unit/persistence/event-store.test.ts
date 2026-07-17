@@ -2,8 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DiagnosticStore } from "../../../src/daemon/diagnostic-store";
 import { EventStore } from "../../../src/daemon/event-store";
 import { Persistence } from "../../../src/daemon/persistence";
+import { EventSequence } from "../../../src/daemon/sequence";
 import { SessionRegistry } from "../../../src/daemon/session-registry";
 import type { NormalizedEvent } from "../../../src/domain/event";
 
@@ -28,13 +30,20 @@ function event(id: string, sequence: number): NormalizedEvent {
   };
 }
 
+async function fixture() {
+  const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
+  temporaryDirectories.push(home);
+  const persistence = await Persistence.open(home);
+  const store = new EventStore(persistence);
+  const diagnostics = new DiagnosticStore(persistence);
+  const sequence = new EventSequence(store);
+  const session = await new SessionRegistry(persistence, store, diagnostics, sequence).create();
+  return { session, store };
+}
+
 describe("event store", () => {
   test("serializes a clear between earlier and later appends", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
-    temporaryDirectories.push(home);
-    const persistence = await Persistence.open(home);
-    const session = await new SessionRegistry(persistence).create();
-    const store = new EventStore(persistence);
+    const { session, store } = await fixture();
     const before = event("before", 1);
     const after = event("after", 2);
 
@@ -47,11 +56,7 @@ describe("event store", () => {
   });
 
   test("streams a bounded snapshot page with aggregate counts", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
-    temporaryDirectories.push(home);
-    const persistence = await Persistence.open(home);
-    const session = await new SessionRegistry(persistence).create();
-    const store = new EventStore(persistence);
+    const { session, store } = await fixture();
     await store.append(session.id, event("first", 1));
     await store.append(session.id, event("second", 2));
     await store.append(session.id, {

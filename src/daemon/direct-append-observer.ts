@@ -52,11 +52,17 @@ export class DirectAppendObserver {
   }
 
   private async tick(): Promise<void> {
-    const sessions = await this.sessions.list();
+    const sessions = await this.sessions.list({ all: true });
     await Promise.all(sessions.map((session) => this.processSession(session.id)));
   }
 
   private async processSession(sessionId: string): Promise<void> {
+    await this.persistence.runSessionOperation(sessionId, () =>
+      this.processSessionWhileLocked(sessionId),
+    );
+  }
+
+  private async processSessionWhileLocked(sessionId: string): Promise<void> {
     const cursorPath = this.persistence.sessionFile(sessionId, "incoming.cursor.json");
     const cursor = await this.readCursor(cursorPath);
     const incoming = await open(this.persistence.sessionFile(sessionId, "incoming.ndjson"), "r");

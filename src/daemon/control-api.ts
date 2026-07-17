@@ -61,7 +61,7 @@ export class ControlApi {
     }
 
     if (request.method === "GET" && pathname === "/v1/control/sessions") {
-      return Response.json({ sessions: await this.sessions.list() });
+      return Response.json({ sessions: await this.sessions.list({ all: true }) });
     }
 
     const probeMatch = /^\/v1\/control\/sessions\/([a-zA-Z0-9_-]+)\/probe$/.exec(pathname);
