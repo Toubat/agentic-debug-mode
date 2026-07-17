@@ -124,6 +124,32 @@ describe("CLI lifecycle", () => {
     await runCli(home, ["stop"]);
   });
 
+  test("logs accepts canonical sessions and preserves typed session errors", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
+    temporaryDirectories.push(home);
+    const created = await runCli(home, ["create"]);
+    const sessionId = extractSessionId(created.stdout);
+
+    const logs = await runCli(home, ["logs", "--session", sessionId, "--json"]);
+    expect(logs.exitCode, logs.stderr).toBe(0);
+    expect(logs.stdout).toContain('"command":"logs"');
+
+    const invalid = await runCli(home, ["logs", "--session", `x/../${sessionId}`, "--json"]);
+    expect(invalid.exitCode).toBe(2);
+    expect(invalid.stderr).toContain('"code":"INVALID_ARGUMENTS"');
+
+    const unknown = await runCli(home, [
+      "logs",
+      "--session",
+      "00000000-0000-4000-8000-000000000000",
+      "--json",
+    ]);
+    expect(unknown.exitCode).toBe(5);
+    expect(unknown.stderr).toContain('"code":"SESSION_NOT_FOUND"');
+
+    await runCli(home, ["stop"]);
+  });
+
   test("help and version do not start the hidden service", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);

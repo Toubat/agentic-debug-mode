@@ -80,8 +80,8 @@ export async function logsCommand(options: LogsOptions, json: boolean): Promise<
   }
 
   try {
-    const daemon = await ensureDaemon({
     const sessionPath = sessionPathSegment(sessionId);
+    const daemon = await ensureDaemon({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
     const hypothesisFilter = options.hypotheses;
