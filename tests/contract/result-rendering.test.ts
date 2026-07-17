@@ -85,4 +85,46 @@ describe("command result rendering", () => {
     expect(rendered.match(/session-1/g)).toHaveLength(1);
     expect(rendered.match(/baseline/g)).toHaveLength(1);
   });
+
+  test("query renders homogeneous flat objects as a table", () => {
+    const result: CommandResult<{ results: unknown[] }> = {
+      command: "query",
+      data: {
+        results: [
+          { count: 2, hypothesisId: "H1" },
+          { count: 1, hypothesisId: "H2" },
+        ],
+      },
+      hints: [],
+      ok: true,
+      partial: false,
+      schemaVersion: 1,
+      scope: { runId: "baseline", sessionId: "session-1" },
+      statistics: { outputValues: 2 },
+      warnings: [],
+    };
+
+    const rendered = renderPretty(result);
+
+    expect(rendered).toContain("COUNT  HYPOTHESISID");
+    expect(rendered).toContain("2      H1");
+    expect(rendered).toContain("1      H2");
+  });
+
+  test("query keeps nested heterogeneous results as pretty JSON", () => {
+    const result: CommandResult<{ results: unknown[] }> = {
+      command: "query",
+      data: { results: [{ nested: { value: 1 } }, ["other"]] },
+      hints: [],
+      ok: true,
+      partial: false,
+      schemaVersion: 1,
+      scope: { runId: "baseline", sessionId: "session-1" },
+      statistics: { outputValues: 2 },
+      warnings: [],
+    };
+
+    expect(renderPretty(result)).toContain('"nested": {');
+    expect(renderPretty(result)).toContain('"other"');
+  });
 });

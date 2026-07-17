@@ -3,13 +3,31 @@ import { dispatch } from "./cli/dispatch";
 import { exitCodeForError } from "./cli/exit-codes";
 import { parseArgs } from "./cli/parse-args";
 import { renderPretty } from "./cli/pretty-renderer";
+import type { QueryWorkerInput } from "./cli/query-runner";
 import { runDaemon } from "./daemon/main";
-import { runJaq } from "./native/query";
+import { runJaq, runJaqFile } from "./native/query";
 import { inspectProcess, terminateIfIdentityMatches } from "./native/system";
 
 async function main(): Promise<number> {
   const argv = Bun.argv.slice(2);
   const command = argv[0];
+
+  if (command === "__query-native") {
+    const input = JSON.parse(await Bun.stdin.text()) as QueryWorkerInput;
+    console.log(
+      JSON.stringify(
+        runJaqFile(
+          input.program,
+          input.path,
+          input.runId,
+          input.hypotheses,
+          input.watermark,
+          input.slurp,
+        ),
+      ),
+    );
+    return 0;
+  }
 
   if (command === "__ensure-daemon") {
     const connection = await ensureDaemon({

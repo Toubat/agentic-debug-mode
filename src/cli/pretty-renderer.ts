@@ -110,6 +110,81 @@ function renderLogTable(records: LogRecord[]): string[] {
   ];
 }
 
+function isScalar(value: unknown): boolean {
+  return (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number" ||
+    typeof value === "string"
+  );
+}
+
+function scalarText(value: unknown): string {
+  return value === null ? "null" : String(value);
+}
+
+function renderRows(headers: string[], rows: string[][]): string[] {
+  const widths = headers.map((header, index) =>
+    Math.max(header.length, ...rows.map((row) => row[index]?.length ?? 0)),
+  );
+  return [
+    headers
+      .map((header, index) =>
+        index === headers.length - 1 ? header : header.padEnd(widths[index] ?? header.length),
+      )
+      .join("  "),
+    ...rows.map((row) =>
+      row
+        .map((value, index) =>
+          index === row.length - 1 ? value : value.padEnd(widths[index] ?? value.length),
+        )
+        .join("  "),
+    ),
+  ];
+}
+
+function renderQueryResults(results: unknown[]): string[] {
+  if (results.length === 0) {
+    return ["results", "  (none)"];
+  }
+  if (results.every(isScalar)) {
+    return [
+      "results",
+      ...renderRows(
+        ["VALUE"],
+        results.map((value) => [scalarText(value)]),
+      ),
+    ];
+  }
+  if (
+    results.every(
+      (value) =>
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        Object.values(value).every(isScalar),
+    )
+  ) {
+    const objects = results as Array<Record<string, unknown>>;
+    const keys = Object.keys(objects[0] ?? {});
+    if (
+      objects.every(
+        (object) =>
+          Object.keys(object).length === keys.length && keys.every((key) => key in object),
+      )
+    ) {
+      return [
+        "results",
+        ...renderRows(
+          keys.map((key) => key.toUpperCase()),
+          objects.map((object) => keys.map((key) => scalarText(object[key]))),
+        ),
+      ];
+    }
+  }
+  return ["results", ...renderValue(results)];
+}
+
 function renderData(result: CommandResult): string[] {
   if (result.data === null || typeof result.data !== "object" || Array.isArray(result.data)) {
     return renderValue(result.data);
@@ -121,6 +196,13 @@ function renderData(result: CommandResult): string[] {
     result.data.records.every(isLogRecord)
   ) {
     return renderLogTable(result.data.records);
+  }
+  if (
+    result.command === "query" &&
+    "results" in result.data &&
+    Array.isArray(result.data.results)
+  ) {
+    return renderQueryResults(result.data.results);
   }
 
   return Object.entries(result.data).flatMap(([key, value]) => [key, ...renderValue(value)]);

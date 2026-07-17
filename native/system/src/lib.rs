@@ -1,6 +1,16 @@
 use napi_derive::napi;
 use serde_json::Value;
-use sysinfo::{Pid, Process, ProcessStatus, Signal, System};
+use sysinfo::{Pid, Process, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, Signal, System};
+
+fn system_for_pid(pid: Pid) -> System {
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::everything(),
+    );
+    system
+}
 
 #[napi(object)]
 pub struct ProcessInspection {
@@ -19,11 +29,14 @@ pub struct TerminationResult {
 
 #[napi]
 pub fn inspect_process(pid: u32) -> ProcessInspection {
-    let system = System::new_all();
-    match system.process(Pid::from_u32(pid)) {
+    let pid_value = Pid::from_u32(pid);
+    let system = system_for_pid(pid_value);
+    match system.process(pid_value) {
         Some(process) => ProcessInspection {
             exists: true,
-            executable: process.exe().map(|path| path.to_string_lossy().into_owned()),
+            executable: process
+                .exe()
+                .map(|path| path.to_string_lossy().into_owned()),
             pid,
             start_time: Some(process.start_time() as f64),
             zombie: matches!(process.status(), ProcessStatus::Zombie),
@@ -53,8 +66,9 @@ pub fn terminate_if_identity_matches(
             };
         }
     };
-    let system = System::new_all();
-    let Some(process) = system.process(Pid::from_u32(pid)) else {
+    let pid_value = Pid::from_u32(pid);
+    let system = system_for_pid(pid_value);
+    let Some(process) = system.process(pid_value) else {
         return TerminationResult {
             reason: "process-absent".to_owned(),
             terminated: false,

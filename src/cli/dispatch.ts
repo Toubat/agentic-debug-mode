@@ -3,6 +3,7 @@ import { clearCommand } from "../commands/clear";
 import { daemonStopCommand } from "../commands/daemon-stop";
 import { logsCommand } from "../commands/logs";
 import { probeCommand } from "../commands/probe";
+import { queryCommand } from "../commands/query";
 import { runBeginCommand } from "../commands/run";
 import { sessionsCommand } from "../commands/sessions";
 import { startCommand } from "../commands/start";
@@ -31,6 +32,9 @@ export async function dispatch(args: ParsedArgs): Promise<CommandOutput> {
   }
   if (args.command[0] === "logs") {
     return logsCommand(args);
+  }
+  if (args.command[0] === "query") {
+    return queryCommand(args);
   }
   if (args.command[0] === "probe") {
     return probeCommand(args);

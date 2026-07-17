@@ -23,7 +23,7 @@ async function run(command: string[], env?: Record<string, string | undefined>) 
 
 describe("standalone native addon distribution", () => {
   beforeAll(async () => {
-    const result = await run(["bun", "run", "build"]);
+    const result = await run(["bun", "run", "build:binary"]);
     expect(result.exitCode, result.stderr).toBe(0);
     if (process.platform !== "win32") {
       await chmod(executable, 0o755);

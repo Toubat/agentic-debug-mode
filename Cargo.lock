@@ -11,6 +11,7 @@ dependencies = [
  "jaq-std",
  "napi",
  "napi-derive",
+ "serde_json",
 ]
 
 [[package]]

@@ -12,7 +12,7 @@
     "build:binary": "bun scripts/build-binary.ts",
     "check": "biome check .",
     "check:write": "biome check --write .",
-    "test": "bun test",
+    "test": "bun run build:native && bun test tests/contract tests/unit tests/integration tests/e2e && bun test tests/distribution",
     "typecheck": "tsc --noEmit"
   },
   "napi": {

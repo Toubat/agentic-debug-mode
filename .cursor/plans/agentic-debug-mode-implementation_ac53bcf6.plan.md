@@ -22,10 +22,10 @@ todos:
     status: completed
   - id: jaq-query
     content: Embed jaq with streaming/slurp queries, secure cursors, and shape-aware output
-    status: in_progress
+    status: completed
   - id: skill-probes
     content: Expand language probe renderers and publish the agentic-debug-mode skill
-    status: pending
+    status: in_progress
   - id: release
     content: Build cross-platform artifacts, npm/Homebrew packaging, CI, and system tests
     status: pending

@@ -195,8 +195,12 @@ async function retireVerifiedStaleProcess(stateRoot: string, controlToken: strin
   throw new Error("Verified stale daemon did not terminate after a forced signal");
 }
 
-export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<DaemonConnection> {
-  const persistence = await Persistence.open(options.homeDirectory);
+const inFlightStarts = new Map<string, Promise<DaemonConnection>>();
+
+async function ensureDaemonOnce(
+  persistence: Persistence,
+  options: EnsureDaemonOptions,
+): Promise<DaemonConnection> {
   const controlToken = await getOrCreateControlToken(persistence.stateRoot);
   const deadline = Date.now() + 15_000;
 
@@ -275,4 +279,22 @@ export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<D
   }
 
   throw new Error("Unable to acquire the daemon startup lock before the deadline");
+}
+
+export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<DaemonConnection> {
+  const persistence = await Persistence.open(options.homeDirectory);
+  const current = inFlightStarts.get(persistence.stateRoot);
+  if (current) {
+    return current;
+  }
+
+  const startup = ensureDaemonOnce(persistence, options);
+  inFlightStarts.set(persistence.stateRoot, startup);
+  try {
+    return await startup;
+  } finally {
+    if (inFlightStarts.get(persistence.stateRoot) === startup) {
+      inFlightStarts.delete(persistence.stateRoot);
+    }
+  }
 }

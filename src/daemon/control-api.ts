@@ -101,9 +101,10 @@ export class ControlApi {
       );
       if (evidenceMatch[2] === "status") {
         const run = await this.runs.get(session.id, runId);
+        const events = await this.events.read(session.id, runId);
         return Response.json({
           diagnostics,
-          eventCount: (await this.events.read(session.id, runId)).length,
+          eventCount: events.length,
           hypothesisIds: run?.hypothesisIds ?? [],
           runId,
           session: {
@@ -113,6 +114,7 @@ export class ControlApi {
             status: session.status,
             workspace: session.workspace,
           },
+          watermark: events.reduce((maximum, event) => Math.max(maximum, event.sequence), 0),
         });
       }
       return Response.json({
