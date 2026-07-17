@@ -14,6 +14,10 @@ export interface CreateSessionInput {
 export class SessionRegistry {
   constructor(private readonly persistence: Persistence) {}
 
+  incomingPath(sessionId: string): string {
+    return this.persistence.sessionFile(sessionId, "incoming.ndjson");
+  }
+
   async create(input: CreateSessionInput): Promise<Session> {
     const session: Session = Object.freeze({
       activeRunId: input.activeRunId,

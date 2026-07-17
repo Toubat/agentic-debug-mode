@@ -82,6 +82,7 @@ export class ControlApi {
         return Response.json({ code: "RUN_NOT_FOUND" }, { status: 404 });
       }
       return Response.json({
+        ingestPath: this.sessions.incomingPath(session.id),
         ingestUrl: `${origin}/v1/ingest/${session.ingestCapability}`,
         runId,
         sessionId: session.id,
@@ -160,6 +161,7 @@ export class ControlApi {
       }
       return Response.json(
         {
+          ingestPath: this.sessions.incomingPath(session.id),
           ingestUrl: `${origin}/v1/ingest/${session.ingestCapability}`,
           runId: run.id,
           sessionId: session.id,

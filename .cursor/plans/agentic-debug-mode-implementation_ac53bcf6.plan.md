@@ -25,10 +25,10 @@ todos:
     status: completed
   - id: skill-probes
     content: Expand language probe renderers and publish the agentic-debug-mode skill
-    status: in_progress
+    status: completed
   - id: release
     content: Build cross-platform artifacts, npm/Homebrew packaging, CI, and system tests
-    status: pending
+    status: in_progress
 isProject: false
 ---
 

@@ -2,10 +2,11 @@ import { requestDaemonControl } from "../cli/daemon-client";
 import { ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput } from "../cli/output-schema";
 import type { ParsedArgs } from "../cli/parse-args";
-import { renderTypeScriptProbe } from "../probes/typescript";
+import { normalizeProbeLanguage, renderProbe } from "../probes/render";
 import { optionString, optionStrings } from "./options";
 
 interface CreatedSession {
+  ingestPath: string;
   ingestUrl: string;
   runId: string;
   sessionId: string;
@@ -16,16 +17,25 @@ export async function startCommand(args: ParsedArgs): Promise<CommandOutput> {
   const language = optionString(args.options, "language");
   const runId = optionString(args.options, "run-id") ?? "baseline";
   const hypothesisIds = optionStrings(args.options, "hypothesis");
-  if (
-    !workspace ||
-    (language !== "typescript" && language !== "ts") ||
-    hypothesisIds.length === 0
-  ) {
+  if (!workspace || !language || hypothesisIds.length === 0) {
     return {
       error: {
         code: "INVALID_ARGUMENTS",
-        hint: "Provide --workspace, --language typescript, and at least one --hypothesis.",
+        hint: "Provide --workspace, a supported --language, and at least one --hypothesis.",
         message: "The start command is missing required options.",
+      },
+      ok: false,
+      schemaVersion: 1,
+    };
+  }
+  try {
+    normalizeProbeLanguage(language);
+  } catch (error) {
+    return {
+      error: {
+        code: "INVALID_ARGUMENTS",
+        hint: "Supported languages: javascript, typescript, python.",
+        message: error instanceof Error ? error.message : "The probe language is unsupported.",
       },
       ok: false,
       schemaVersion: 1,
@@ -45,7 +55,7 @@ export async function startCommand(args: ParsedArgs): Promise<CommandOutput> {
       data: {
         capabilities: { liveEvents: true, ui: false },
         daemon: { status: "running" },
-        instrumentation: renderTypeScriptProbe(created),
+        instrumentation: renderProbe(language, created),
         workspace,
       },
       hints: [],
