@@ -7,10 +7,10 @@ todos:
     status: completed
   - id: contracts
     content: Define domain schemas, CLI parsing, result envelopes, renderers, and exit codes
-    status: in_progress
+    status: completed
   - id: persistence
     content: Implement atomic ~/.agent-debug-mode persistence with isolated sessions and immutable runs
-    status: pending
+    status: in_progress
   - id: daemon-supervisor
     content: Implement and stress-test single-instance daemon startup, recovery, ports, upgrades, and shutdown
     status: pending
