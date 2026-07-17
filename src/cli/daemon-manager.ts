@@ -23,6 +23,8 @@ export interface EnsureDaemonOptions {
   homeDirectory?: string;
 }
 
+export class DaemonVersionIncompatibleError extends Error {}
+
 function isCompatible(metadata: DaemonMetadata): boolean {
   return (
     metadata.protocolVersion === DAEMON_PROTOCOL_VERSION &&
