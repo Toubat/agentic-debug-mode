@@ -228,13 +228,16 @@ export function renderPretty(output: CommandOutput): string {
     );
   }
 
-  const summary = [output.command.toUpperCase()];
+  const summary = [output.command === "create" ? "SESSION CREATED" : output.command.toUpperCase()];
   const scope = renderScope(output);
   if (scope) {
     summary.push(scope);
   }
   summary.push(...renderStatistics(output));
   sections.push(summary);
+  if (output.command === "reset") {
+    sections.push(["Sequence reset to 1"]);
+  }
   sections.push(renderData(output));
 
   if (output.hints.length > 0) {

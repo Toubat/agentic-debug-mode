@@ -61,7 +61,8 @@ export class ControlApi {
     }
 
     if (request.method === "GET" && pathname === "/v1/control/sessions") {
-      return Response.json({ sessions: await this.sessions.list({ all: true }) });
+      const all = new URL(request.url).searchParams.get("all") === "true";
+      return Response.json({ sessions: await this.sessions.list({ all }) });
     }
 
     const probeMatch = /^\/v1\/control\/sessions\/([a-zA-Z0-9_-]+)\/probe$/.exec(pathname);
@@ -118,6 +119,15 @@ export class ControlApi {
       return Response.json({ diagnostics, ...page });
     }
 
+    const deleteMatch = /^\/v1\/control\/sessions\/([a-zA-Z0-9_-]+)$/.exec(pathname);
+    if (request.method === "DELETE" && deleteMatch?.[1]) {
+      const removed = await this.sessions.remove(deleteMatch[1]);
+      if (!removed) {
+        return Response.json({ code: "SESSION_NOT_FOUND" }, { status: 404 });
+      }
+      return Response.json({ removed: true, sessionId: deleteMatch[1] });
+    }
+
     if (request.method !== "POST") {
       return undefined;
     }
@@ -125,7 +135,7 @@ export class ControlApi {
       const session = await this.sessions.create();
       return Response.json(
         {
-          ingestPath: this.sessions.incomingPath(session.id),
+          appendPath: this.sessions.incomingPath(session.id),
           ingestUrl: `${origin}/v1/ingest/${session.id}`,
           sessionId: session.id,
         },
@@ -133,22 +143,17 @@ export class ControlApi {
       );
     }
 
-    const clearMatch = /^\/v1\/control\/sessions\/([a-zA-Z0-9_-]+)\/clear$/.exec(pathname);
-    if (clearMatch?.[1]) {
-      if (!(await this.sessions.get(clearMatch[1]))) {
+    const resetMatch = /^\/v1\/control\/sessions\/([a-zA-Z0-9_-]+)\/reset$/.exec(pathname);
+    if (resetMatch?.[1]) {
+      if (!(await this.sessions.get(resetMatch[1]))) {
         return Response.json({ code: "SESSION_NOT_FOUND" }, { status: 404 });
       }
-      await Promise.all([this.events.clear(clearMatch[1]), this.diagnostics.clear(clearMatch[1])]);
-      return Response.json({ cleared: true, sessionId: clearMatch[1] });
-    }
-
-    const cleanMatch = /^\/v1\/control\/sessions\/([a-zA-Z0-9_-]+)\/clean$/.exec(pathname);
-    if (cleanMatch?.[1]) {
-      const removed = await this.sessions.remove(cleanMatch[1]);
-      if (!removed) {
-        return Response.json({ code: "SESSION_NOT_FOUND" }, { status: 404 });
-      }
-      return Response.json({ removed: true, sessionId: cleanMatch[1] });
+      const session = await this.sessions.reset(resetMatch[1]);
+      return Response.json({
+        appendPath: this.sessions.incomingPath(session.id),
+        ingestUrl: `${origin}/v1/ingest/${session.id}`,
+        sessionId: session.id,
+      });
     }
 
     return undefined;

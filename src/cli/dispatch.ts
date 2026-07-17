@@ -1,12 +1,15 @@
-import { daemonStopCommand } from "../commands/daemon-stop";
+import { cleanCommand } from "../commands/clean";
+import { createCommand } from "../commands/create";
 import { logsCommand } from "../commands/logs";
 import { queryCommand } from "../commands/query";
+import { resetCommand } from "../commands/reset";
 import { sessionsCommand } from "../commands/sessions";
 import { statusCommand } from "../commands/status";
+import { stopCommand } from "../commands/stop";
 import type { CommandOutput } from "./output-schema";
 import type { CliInvocation } from "./program";
 
-function pendingCommand(command: "create" | "template" | "reset" | "clean"): CommandOutput {
+function pendingCommand(command: "template"): CommandOutput {
   return {
     error: {
       code: "INVALID_ARGUMENTS",
@@ -21,11 +24,11 @@ export async function dispatch(invocation: CliInvocation): Promise<CommandOutput
   const command = invocation.command;
   switch (command.kind) {
     case "create":
-      return pendingCommand(command.kind);
+      return createCommand();
     case "template":
       return pendingCommand(command.kind);
     case "reset":
-      return pendingCommand(command.kind);
+      return resetCommand(command.sessionId);
     case "logs":
       return logsCommand(command, invocation.json);
     case "query":
@@ -35,9 +38,9 @@ export async function dispatch(invocation: CliInvocation): Promise<CommandOutput
     case "sessions":
       return sessionsCommand(command.all);
     case "clean":
-      return pendingCommand(command.kind);
+      return cleanCommand(command.sessionId);
     case "stop":
-      return daemonStopCommand();
+      return stopCommand();
     default: {
       const exhaustive: never = command;
       return exhaustive;

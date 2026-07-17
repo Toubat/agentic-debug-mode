@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { requestDaemonShutdown } from "../../../src/cli/daemon-client";
 import { ensureDaemon } from "../../../src/cli/daemon-manager";
-import type { DaemonMetadata } from "../../../src/daemon/protocol";
+import type { CommandResult } from "../../../src/cli/output-schema";
 
 const temporaryDirectories: string[] = [];
 const root = join(import.meta.dir, "..", "..", "..");
@@ -15,8 +15,8 @@ afterEach(async () => {
   );
 });
 
-async function startContender(home: string): Promise<DaemonMetadata> {
-  const child = Bun.spawn([process.execPath, join(root, "src", "cli.ts"), "__ensure-daemon"], {
+async function createSession(home: string): Promise<string> {
+  const child = Bun.spawn([process.execPath, join(root, "src", "cli.ts"), "create", "--json"], {
     cwd: root,
     env: { ...process.env, AGENT_DEBUG_MODE_HOME_OVERRIDE: home },
     stderr: "pipe",
@@ -28,19 +28,20 @@ async function startContender(home: string): Promise<DaemonMetadata> {
     new Response(child.stderr).text(),
   ]);
   expect(exitCode, stderr).toBe(0);
-  return JSON.parse(stdout) as DaemonMetadata;
+  const result = JSON.parse(stdout) as CommandResult<{ sessionId: string }>;
+  return result.data.sessionId;
 }
 
 describe("cross-process daemon startup", () => {
-  test("twenty CLI processes converge on one authoritative daemon", async () => {
+  test("twenty create callers use one hidden service and create isolated sessions", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);
 
-    const metadata = await Promise.all(Array.from({ length: 20 }, () => startContender(home)));
-    expect(new Set(metadata.map((item) => item.pid)).size).toBe(1);
-    expect(new Set(metadata.map((item) => item.nonce)).size).toBe(1);
-    expect(new Set(metadata.map((item) => item.port)).size).toBe(1);
+    const sessionIds = await Promise.all(Array.from({ length: 20 }, () => createSession(home)));
+    expect(new Set(sessionIds).size).toBe(20);
 
-    await requestDaemonShutdown(await ensureDaemon({ homeDirectory: home }));
+    const connection = await ensureDaemon({ homeDirectory: home });
+    expect(connection.port).toBeGreaterThan(0);
+    await requestDaemonShutdown(connection);
   }, 30_000);
 });

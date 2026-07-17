@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 describe("control API lifecycle", () => {
-  test("declares a new immutable run and clears only the selected run", async () => {
+  test("creates, resets, lists, and removes one explicit session", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);
     const connection = await ensureDaemon({ homeDirectory: home });
@@ -29,64 +29,76 @@ describe("control API lifecycle", () => {
     try {
       const created = (await (
         await fetch(`${origin}/v1/control/sessions`, {
-          body: JSON.stringify({
-            hypothesisIds: ["H1"],
-            runId: "baseline",
-            workspace: "/workspace/project",
-          }),
           headers,
           method: "POST",
         })
       ).json()) as {
+        appendPath: string;
         ingestUrl: string;
         sessionId: string;
       };
-      const event = (runId: string, id: string) => ({
-        data: { id },
-        hypothesisId: "H1",
-        id,
-        location: "src/example.ts:1",
-        message: "Lifecycle event",
-        runId,
-        schemaVersion: 1,
-        sessionId: created.sessionId,
-        timestamp: 1,
-      });
-      await fetch(created.ingestUrl, {
-        body: JSON.stringify(event("baseline", "baseline-event")),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
+      expect(created).toEqual({
+        appendPath: expect.stringContaining("incoming.ndjson"),
+        ingestUrl: `${origin}/v1/ingest/${created.sessionId}`,
+        sessionId: expect.any(String),
       });
 
-      const runResponse = await fetch(`${origin}/v1/control/sessions/${created.sessionId}/runs`, {
+      await fetch(created.ingestUrl, {
         body: JSON.stringify({
-          hypothesisIds: ["H1"],
-          runId: "fixed",
+          data: { id: "event-before-reset" },
+          hypothesisId: "H1",
+          location: "src/example.ts:1",
+          message: "Lifecycle event",
+          timestamp: 1,
         }),
-        headers,
-        method: "POST",
-      });
-      expect(runResponse.status).toBe(201);
-      await fetch(created.ingestUrl, {
-        body: JSON.stringify(event("fixed", "fixed-event")),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
 
-      const clearResponse = await fetch(
-        `${origin}/v1/control/sessions/${created.sessionId}/clear`,
+      const resetResponse = await fetch(
+        `${origin}/v1/control/sessions/${created.sessionId}/reset`,
         {
-          body: JSON.stringify({ runId: "baseline" }),
           headers,
           method: "POST",
         },
       );
-      expect(clearResponse.status).toBe(200);
-      expect(
-        (await new EventStore(await Persistence.open(home)).read(created.sessionId)).map(
-          (item) => item.id,
-        ),
-      ).toEqual(["fixed-event"]);
+      expect(resetResponse.status).toBe(200);
+      expect(await resetResponse.json()).toEqual({
+        appendPath: created.appendPath,
+        ingestUrl: created.ingestUrl,
+        sessionId: created.sessionId,
+      });
+      expect(await new EventStore(await Persistence.open(home)).read(created.sessionId)).toEqual(
+        [],
+      );
+
+      const listedResponse = await fetch(`${origin}/v1/control/sessions?all=false`, {
+        headers,
+      });
+      expect(listedResponse.status).toBe(200);
+      const listed = (await listedResponse.json()) as {
+        sessions: Array<{ id: string }>;
+      };
+      expect(listed.sessions.map((session) => session.id)).toContain(created.sessionId);
+
+      const deleteResponse = await fetch(`${origin}/v1/control/sessions/${created.sessionId}`, {
+        headers,
+        method: "DELETE",
+      });
+      expect(deleteResponse.status).toBe(200);
+      expect(await deleteResponse.json()).toEqual({
+        removed: true,
+        sessionId: created.sessionId,
+      });
+
+      for (const [method, path] of [
+        ["POST", `/v1/control/sessions/${created.sessionId}/reset`],
+        ["DELETE", `/v1/control/sessions/${created.sessionId}`],
+      ] as const) {
+        const missing = await fetch(`${origin}${path}`, { headers, method });
+        expect(missing.status).toBe(404);
+        expect(await missing.json()).toEqual({ code: "SESSION_NOT_FOUND" });
+      }
     } finally {
       await requestDaemonShutdown(connection);
     }

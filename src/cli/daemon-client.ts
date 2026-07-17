@@ -1,5 +1,16 @@
 import type { DaemonConnection, DaemonMetadata } from "../daemon/protocol";
 
+export class DaemonControlError extends Error {
+  constructor(
+    readonly code: string,
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "DaemonControlError";
+  }
+}
+
 function endpoint(connection: Pick<DaemonConnection, "host" | "port">, path: string): string {
   return `http://${connection.host}:${connection.port}${path}`;
 }
@@ -20,8 +31,14 @@ export async function requestDaemonControl<T>(
     signal: init.signal ?? AbortSignal.timeout(5_000),
   });
   if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Daemon control request failed with status ${response.status}: ${details}`);
+    const details = (await response.json().catch(() => undefined)) as
+      | { code?: string; message?: string }
+      | undefined;
+    throw new DaemonControlError(
+      details?.code ?? "DAEMON_UNAVAILABLE",
+      response.status,
+      details?.message ?? `Daemon control request failed with status ${response.status}.`,
+    );
   }
   return (await response.json()) as T;
 }

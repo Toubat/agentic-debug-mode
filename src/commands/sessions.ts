@@ -1,16 +1,22 @@
 import { requestDaemonControl } from "../cli/daemon-client";
 import { ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput } from "../cli/output-schema";
-import type { Session } from "../domain/session";
+import { commandError } from "./errors";
 
-export async function sessionsCommand(_all: boolean): Promise<CommandOutput> {
+interface SessionSummary {
+  createdAt: number;
+  eventCount: number;
+  id: string;
+}
+
+export async function sessionsCommand(all: boolean): Promise<CommandOutput> {
   try {
     const daemon = await ensureDaemon({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
-    const response = await requestDaemonControl<{ sessions: Session[] }>(
+    const response = await requestDaemonControl<{ sessions: SessionSummary[] }>(
       daemon,
-      "/v1/control/sessions",
+      `/v1/control/sessions?all=${String(all)}`,
     );
     const sessions = response.sessions;
     return {
@@ -25,13 +31,6 @@ export async function sessionsCommand(_all: boolean): Promise<CommandOutput> {
       warnings: [],
     };
   } catch (error) {
-    return {
-      error: {
-        code: "DAEMON_UNAVAILABLE",
-        message: error instanceof Error ? error.message : "The daemon is unavailable.",
-      },
-      ok: false,
-      schemaVersion: 1,
-    };
+    return commandError(error, "DAEMON_UNAVAILABLE", "The daemon is unavailable.");
   }
 }
