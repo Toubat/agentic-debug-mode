@@ -84,13 +84,43 @@ describe("CLI lifecycle", () => {
   test("unknown explicit sessions return SESSION_NOT_FOUND", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);
+    const unknownSessionId = "00000000-0000-4000-8000-000000000000";
 
     for (const command of ["reset", "clean"]) {
-      const result = await runCli(home, [command, "--session", "missing-session", "--json"]);
+      const result = await runCli(home, [command, "--session", unknownSessionId, "--json"]);
       expect(result.exitCode).toBe(5);
       expect(result.stderr).toContain('"code":"SESSION_NOT_FOUND"');
     }
 
+    await runCli(home, ["stop"]);
+  });
+
+  test("rejects noncanonical session path segments without touching the real session", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
+    temporaryDirectories.push(home);
+    const created = await runCli(home, ["create"]);
+    const sessionId = extractSessionId(created.stdout);
+    const invalidSessionIds = [
+      `x/../${sessionId}`,
+      `x%2F..%2F${sessionId}`,
+      `%2e%2e%2f${sessionId}`,
+    ];
+
+    for (const command of ["reset", "clean"]) {
+      for (const invalidSessionId of invalidSessionIds) {
+        const rejected = await runCli(home, [command, "--session", invalidSessionId, "--json"]);
+        expect(rejected.exitCode).toBe(2);
+        expect(rejected.stderr).toContain('"code":"INVALID_ARGUMENTS"');
+
+        const preserved = await runCli(home, ["status", "--session", sessionId]);
+        expect(preserved.exitCode, preserved.stderr).toBe(0);
+      }
+    }
+
+    const reset = await runCli(home, ["reset", "--session", sessionId]);
+    expect(reset.exitCode, reset.stderr).toBe(0);
+    const clean = await runCli(home, ["clean", "--session", sessionId]);
+    expect(clean.exitCode, clean.stderr).toBe(0);
     await runCli(home, ["stop"]);
   });
 

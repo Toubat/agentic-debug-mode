@@ -49,6 +49,27 @@ async function replaceWithExternalSymlink(path: string): Promise<void> {
   await symlink(external, path);
 }
 
+function holdSessionOperation(persistence: Persistence, sessionId: string) {
+  let release: (() => void) | undefined;
+  let markEntered: (() => void) | undefined;
+  const entered = new Promise<void>((resolve) => {
+    markEntered = resolve;
+  });
+  const operation = persistence.runSessionOperation(
+    sessionId,
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+        markEntered?.();
+      }),
+  );
+  return {
+    entered,
+    operation,
+    release: () => release?.(),
+  };
+}
+
 describe("session reset", () => {
   test("preserves session identity and replaces the evidence epoch", async () => {
     const { events, registry, sequence } = await fixture();
@@ -58,9 +79,9 @@ describe("session reset", () => {
 
     const reset = await registry.reset(session.id);
 
-    expect(reset.id).toBe(session.id);
-    expect(reset.createdAt).toBe(session.createdAt);
-    expect(reset.evidenceEpoch).not.toBe(session.evidenceEpoch);
+    expect(reset?.id).toBe(session.id);
+    expect(reset?.createdAt).toBe(session.createdAt);
+    expect(reset?.evidenceEpoch).not.toBe(session.evidenceEpoch);
     expect(await events.read(session.id)).toEqual([]);
     expect(await sequence.next(session.id)).toBe(1);
   });
@@ -125,6 +146,37 @@ describe("session reset", () => {
 
     expect(await events.read(session.id)).toEqual([]);
     expect(await sequence.next(session.id)).toBe(1);
+  });
+
+  test("returns not found when removal wins the per-session operation race", async () => {
+    const { persistence, registry } = await fixture();
+    const session = await registry.create();
+    const held = holdSessionOperation(persistence, session.id);
+    await held.entered;
+
+    const removing = registry.remove(session.id);
+    const resetting = registry.reset(session.id);
+    held.release();
+
+    await held.operation;
+    expect(await removing).toBe(true);
+    await expect(resetting).resolves.toBeUndefined();
+  });
+
+  test("completes reset before a queued removal when reset wins the operation race", async () => {
+    const { persistence, registry } = await fixture();
+    const session = await registry.create();
+    const held = holdSessionOperation(persistence, session.id);
+    await held.entered;
+
+    const resetting = registry.reset(session.id);
+    const removing = registry.remove(session.id);
+    held.release();
+
+    await held.operation;
+    expect((await resetting)?.id).toBe(session.id);
+    expect(await removing).toBe(true);
+    expect(await registry.get(session.id)).toBeUndefined();
   });
 
   test("refuses files redirected through symbolic links before reset or removal", async () => {

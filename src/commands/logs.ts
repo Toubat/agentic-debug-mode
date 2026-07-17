@@ -2,9 +2,11 @@ import { requestDaemonControl } from "../cli/daemon-client";
 import { ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput, Hint, Warning } from "../cli/output-schema";
 import type { CliInvocation } from "../cli/program";
+import { sessionPathSegment } from "../cli/session-path";
 import { createSnapshotCursor, verifySnapshotCursor } from "../cli/snapshot-cursor";
 import type { EvidenceDiagnostic } from "../domain/diagnostic";
 import type { NormalizedEvent } from "../domain/event";
+import { commandError } from "./errors";
 
 type LogsOptions = Extract<CliInvocation["command"], { kind: "logs" }>;
 
@@ -79,6 +81,7 @@ export async function logsCommand(options: LogsOptions, json: boolean): Promise<
 
   try {
     const daemon = await ensureDaemon({
+    const sessionPath = sessionPathSegment(sessionId);
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
     const hypothesisFilter = options.hypotheses;
@@ -100,7 +103,7 @@ export async function logsCommand(options: LogsOptions, json: boolean): Promise<
     }
     const response = await requestDaemonControl<LogsResponse>(
       daemon,
-      `/v1/control/sessions/${sessionId}/logs?${search}`,
+      `/v1/control/sessions/${sessionPath}/logs?${search}`,
     );
     const watermark = requestedWatermark ?? response.watermark;
     const snapshot =
@@ -175,13 +178,6 @@ export async function logsCommand(options: LogsOptions, json: boolean): Promise<
       warnings: diagnosticsWarnings(response.diagnostics),
     };
   } catch (error) {
-    return {
-      error: {
-        code: "SESSION_NOT_FOUND",
-        message: error instanceof Error ? error.message : "The session was not found.",
-      },
-      ok: false,
-      schemaVersion: 1,
-    };
+    return commandError(error, "SESSION_NOT_FOUND", "The session was not found.");
   }
 }

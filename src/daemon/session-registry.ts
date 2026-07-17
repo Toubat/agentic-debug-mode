@@ -96,12 +96,12 @@ export class SessionRegistry {
     );
   }
 
-  async reset(sessionId: string): Promise<Session> {
+  async reset(sessionId: string): Promise<Session | undefined> {
     return this.persistence.runSessionOperation(sessionId, async () => {
       await this.persistence.rejectSessionSymbolicLinks(sessionId);
       const session = await this.get(sessionId);
       if (!session) {
-        throw new Error(`Session not found: ${sessionId}`);
+        return undefined;
       }
       const reset = Object.freeze({
         ...session,

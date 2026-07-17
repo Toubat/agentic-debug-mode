@@ -145,10 +145,10 @@ export class ControlApi {
 
     const resetMatch = /^\/v1\/control\/sessions\/([a-zA-Z0-9_-]+)\/reset$/.exec(pathname);
     if (resetMatch?.[1]) {
-      if (!(await this.sessions.get(resetMatch[1]))) {
+      const session = await this.sessions.reset(resetMatch[1]);
+      if (!session) {
         return Response.json({ code: "SESSION_NOT_FOUND" }, { status: 404 });
       }
-      const session = await this.sessions.reset(resetMatch[1]);
       return Response.json({
         appendPath: this.sessions.incomingPath(session.id),
         ingestUrl: `${origin}/v1/ingest/${session.id}`,

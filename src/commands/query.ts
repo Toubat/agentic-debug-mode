@@ -3,6 +3,7 @@ import { ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput, Warning } from "../cli/output-schema";
 import type { CliInvocation } from "../cli/program";
 import { runQueryWithTimeout } from "../cli/query-runner";
+import { sessionPathSegment } from "../cli/session-path";
 import { createSnapshotCursor, verifySnapshotCursor } from "../cli/snapshot-cursor";
 import { Persistence } from "../daemon/persistence";
 import type { EvidenceDiagnostic } from "../domain/diagnostic";
@@ -31,13 +32,14 @@ export async function queryCommand(options: QueryOptions): Promise<CommandOutput
   }
 
   try {
+    const sessionPath = sessionPathSegment(sessionId);
     const startedAt = performance.now();
     const daemon = await ensureDaemon({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
     const input = await requestDaemonControl<QueryInputResponse>(
       daemon,
-      `/v1/control/sessions/${sessionId}/status`,
+      `/v1/control/sessions/${sessionPath}/status`,
     );
     const hypothesisFilter: string[] = [];
     const requestedSnapshot: string | undefined = undefined;

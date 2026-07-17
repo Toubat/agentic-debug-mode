@@ -1,8 +1,10 @@
 import { requestDaemonControl } from "../cli/daemon-client";
 import { ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput, Warning } from "../cli/output-schema";
+import { sessionPathSegment } from "../cli/session-path";
 import type { EvidenceDiagnostic } from "../domain/diagnostic";
 import type { Session } from "../domain/session";
+import { commandError } from "./errors";
 
 interface StatusResponse {
   diagnostics: EvidenceDiagnostic[];
@@ -12,12 +14,13 @@ interface StatusResponse {
 
 export async function statusCommand(sessionId: string): Promise<CommandOutput> {
   try {
+    const sessionPath = sessionPathSegment(sessionId);
     const daemon = await ensureDaemon({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
     const response = await requestDaemonControl<StatusResponse>(
       daemon,
-      `/v1/control/sessions/${sessionId}/status`,
+      `/v1/control/sessions/${sessionPath}/status`,
     );
     const warnings: Warning[] =
       response.diagnostics.length === 0
@@ -57,13 +60,6 @@ export async function statusCommand(sessionId: string): Promise<CommandOutput> {
       warnings,
     };
   } catch (error) {
-    return {
-      error: {
-        code: "SESSION_NOT_FOUND",
-        message: error instanceof Error ? error.message : "The session was not found.",
-      },
-      ok: false,
-      schemaVersion: 1,
-    };
+    return commandError(error, "SESSION_NOT_FOUND", "The session was not found.");
   }
 }

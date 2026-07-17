@@ -1,6 +1,7 @@
 import { DaemonControlError } from "../cli/daemon-client";
 import { DaemonVersionIncompatibleError } from "../cli/daemon-manager";
 import type { CommandOutput } from "../cli/output-schema";
+import { InvalidSessionIdError } from "../cli/session-path";
 
 export function commandError(
   error: unknown,
@@ -10,9 +11,11 @@ export function commandError(
   const code =
     error instanceof DaemonVersionIncompatibleError
       ? "VERSION_INCOMPATIBLE"
-      : error instanceof DaemonControlError
+      : error instanceof InvalidSessionIdError
         ? error.code
-        : fallbackCode;
+        : error instanceof DaemonControlError
+          ? error.code
+          : fallbackCode;
   return {
     error: {
       code,
