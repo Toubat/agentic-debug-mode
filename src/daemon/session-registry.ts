@@ -75,4 +75,14 @@ export class SessionRegistry {
     await writeJsonAtomic(this.persistence.sessionFile(sessionId, "session.json"), updated);
     return updated;
   }
+
+  async close(sessionId: string): Promise<Session> {
+    const session = await this.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} does not exist`);
+    }
+    const updated = Object.freeze({ ...session, status: "closed" as const });
+    await writeJsonAtomic(this.persistence.sessionFile(sessionId, "session.json"), updated);
+    return updated;
+  }
 }

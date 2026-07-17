@@ -4,6 +4,28 @@ function endpoint(connection: Pick<DaemonConnection, "host" | "port">, path: str
   return `http://${connection.host}:${connection.port}${path}`;
 }
 
+export async function requestDaemonControl<T>(
+  connection: DaemonConnection,
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${connection.controlToken}`);
+  if (init.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const response = await fetch(endpoint(connection, path), {
+    ...init,
+    headers,
+    signal: init.signal ?? AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Daemon control request failed with status ${response.status}: ${details}`);
+  }
+  return (await response.json()) as T;
+}
+
 export async function readDaemonHealth(
   connection: Pick<DaemonConnection, "controlToken" | "host" | "port">,
 ): Promise<DaemonMetadata | undefined> {

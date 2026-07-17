@@ -19,10 +19,10 @@ todos:
     status: completed
   - id: cli-slice
     content: Ship start, probe, logs, status, clear, run, sessions, and stop with TypeScript probes
-    status: in_progress
+    status: completed
   - id: jaq-query
     content: Embed jaq with streaming/slurp queries, secure cursors, and shape-aware output
-    status: pending
+    status: in_progress
   - id: skill-probes
     content: Expand language probe renderers and publish the agentic-debug-mode skill
     status: pending

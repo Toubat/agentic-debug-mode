@@ -43,9 +43,84 @@ function renderValue(value: unknown, indentation = "  "): string[] {
     .map((line) => `${indentation}${line}`);
 }
 
+interface LogRecord {
+  data: unknown;
+  hypothesisId: string;
+  id: string;
+  location: string;
+  message: string;
+  receivedAt: number;
+  schemaVersion: number;
+  sequence: number;
+  timestamp: number;
+}
+
+function isLogRecord(value: unknown): value is LogRecord {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    typeof record.sequence === "number" &&
+    typeof record.timestamp === "number" &&
+    typeof record.receivedAt === "number" &&
+    typeof record.hypothesisId === "string" &&
+    typeof record.location === "string" &&
+    typeof record.message === "string" &&
+    typeof record.schemaVersion === "number" &&
+    "data" in record
+  );
+}
+
+function formatTimestamp(timestamp: number): string {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.valueOf()) ? String(timestamp) : date.toISOString();
+}
+
+function renderLogTable(records: LogRecord[]): string[] {
+  if (records.length === 0) {
+    return ["records", "  (none)"];
+  }
+  const headers = ["ID", "SEQ", "TIME", "RECEIVED", "HYP", "LOCATION", "MESSAGE", "DATA"];
+  const rows = records.map((record) => [
+    record.id,
+    String(record.sequence),
+    formatTimestamp(record.timestamp),
+    formatTimestamp(record.receivedAt),
+    record.hypothesisId,
+    record.location,
+    record.message,
+    JSON.stringify(record.data),
+  ]);
+  const widths = headers.map((header, index) =>
+    Math.max(header.length, ...rows.map((row) => row[index]?.length ?? 0)),
+  );
+  const renderRow = (row: string[]) =>
+    row
+      .map((value, index) =>
+        index === row.length - 1 ? value : value.padEnd(widths[index] ?? value.length),
+      )
+      .join("  ");
+  const schemas = [...new Set(records.map((record) => record.schemaVersion))];
+  return [
+    `records  •  schemaVersion ${schemas.join(", ")}`,
+    renderRow(headers),
+    ...rows.map(renderRow),
+  ];
+}
+
 function renderData(result: CommandResult): string[] {
   if (result.data === null || typeof result.data !== "object" || Array.isArray(result.data)) {
     return renderValue(result.data);
+  }
+  if (
+    result.command === "logs" &&
+    "records" in result.data &&
+    Array.isArray(result.data.records) &&
+    result.data.records.every(isLogRecord)
+  ) {
+    return renderLogTable(result.data.records);
   }
 
   return Object.entries(result.data).flatMap(([key, value]) => [key, ...renderValue(value)]);

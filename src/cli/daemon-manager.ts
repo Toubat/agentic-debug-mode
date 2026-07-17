@@ -62,7 +62,13 @@ function daemonCommand(): string[] {
   return [process.execPath, "__daemon"];
 }
 
-function spawnDaemon(nonce: string, homeDirectory?: string): void {
+interface SpawnedDaemon {
+  hasExited(): boolean;
+}
+
+class DaemonChildExitedError extends Error {}
+
+function spawnDaemon(nonce: string, homeDirectory?: string): SpawnedDaemon {
   const child = Bun.spawn([...daemonCommand(), "--nonce", nonce], {
     env: {
       ...process.env,
@@ -74,12 +80,19 @@ function spawnDaemon(nonce: string, homeDirectory?: string): void {
     windowsHide: true,
   });
   child.unref();
+  return {
+    hasExited: () => {
+      const process = inspectProcess(child.pid);
+      return !process.exists || process.zombie;
+    },
+  };
 }
 
 async function awaitReadyCandidate(
   stateRoot: string,
   nonce: string,
   controlToken: string,
+  spawned: SpawnedDaemon,
 ): Promise<DaemonConnection> {
   const deadline = Date.now() + 10_000;
   let candidateSeen = false;
@@ -96,6 +109,9 @@ async function awaitReadyCandidate(
         await removeReadyCandidate(stateRoot, nonce);
         return { ...health, controlToken };
       }
+    }
+    if (spawned.hasExited()) {
+      throw new DaemonChildExitedError("Daemon child exited before publishing a ready candidate");
     }
     await Bun.sleep(20);
   }
@@ -232,8 +248,27 @@ export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<D
         return rechecked;
       }
       await retireVerifiedStaleProcess(persistence.stateRoot, controlToken);
-      spawnDaemon(nonce, options.homeDirectory);
-      return await awaitReadyCandidate(persistence.stateRoot, nonce, controlToken);
+      let lastStartupError: unknown;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        let spawned: SpawnedDaemon;
+        try {
+          spawned = spawnDaemon(nonce, options.homeDirectory);
+        } catch (error) {
+          lastStartupError = error;
+          await Bun.sleep(25 * (attempt + 1));
+          continue;
+        }
+        try {
+          return await awaitReadyCandidate(persistence.stateRoot, nonce, controlToken, spawned);
+        } catch (error) {
+          if (!(error instanceof DaemonChildExitedError)) {
+            throw error;
+          }
+          lastStartupError = error;
+          await Bun.sleep(25 * (attempt + 1));
+        }
+      }
+      throw lastStartupError;
     } finally {
       await lock.release();
     }

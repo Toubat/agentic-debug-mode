@@ -59,6 +59,69 @@ export class ControlApi {
   ) {}
 
   async handle(request: Request, pathname: string, origin: string): Promise<Response | undefined> {
+    if (request.method === "GET" && pathname === "/v1/control/sessions") {
+      const sessions = await this.sessions.list();
+      return Response.json({
+        sessions: sessions.map((session) => ({
+          activeRunId: session.activeRunId,
+          createdAt: session.createdAt,
+          id: session.id,
+          status: session.status,
+          workspace: session.workspace,
+        })),
+      });
+    }
+    const probeMatch = /^\/v1\/control\/sessions\/([a-zA-Z0-9_-]+)\/probe$/.exec(pathname);
+    if (request.method === "GET" && probeMatch?.[1]) {
+      const session = await this.sessions.get(probeMatch[1]);
+      if (session?.status !== "active") {
+        return Response.json({ code: "SESSION_NOT_FOUND" }, { status: 404 });
+      }
+      const runId = new URL(request.url).searchParams.get("runId") ?? session.activeRunId;
+      if (!(await this.runs.get(session.id, runId))) {
+        return Response.json({ code: "RUN_NOT_FOUND" }, { status: 404 });
+      }
+      return Response.json({
+        ingestUrl: `${origin}/v1/ingest/${session.ingestCapability}`,
+        runId,
+        sessionId: session.id,
+      });
+    }
+    const evidenceMatch = /^\/v1\/control\/sessions\/([a-zA-Z0-9_-]+)\/(logs|status)$/.exec(
+      pathname,
+    );
+    if (request.method === "GET" && evidenceMatch?.[1] && evidenceMatch[2]) {
+      const session = await this.sessions.get(evidenceMatch[1]);
+      if (!session) {
+        return Response.json({ code: "SESSION_NOT_FOUND" }, { status: 404 });
+      }
+      const runId = new URL(request.url).searchParams.get("runId") ?? session.activeRunId;
+      const diagnostics = (await this.diagnostics.read(session.id)).filter(
+        (item) => item.recoverable.runId === undefined || item.recoverable.runId === runId,
+      );
+      if (evidenceMatch[2] === "status") {
+        const run = await this.runs.get(session.id, runId);
+        return Response.json({
+          diagnostics,
+          eventCount: (await this.events.read(session.id, runId)).length,
+          hypothesisIds: run?.hypothesisIds ?? [],
+          runId,
+          session: {
+            activeRunId: session.activeRunId,
+            createdAt: session.createdAt,
+            id: session.id,
+            status: session.status,
+            workspace: session.workspace,
+          },
+        });
+      }
+      return Response.json({
+        diagnostics,
+        events: await this.events.read(session.id, runId),
+        runId,
+        workspace: session.workspace,
+      });
+    }
     if (request.method !== "POST") {
       return undefined;
     }
@@ -76,15 +139,23 @@ export class ControlApi {
           { status: 400 },
         );
       }
-      const session = await this.sessions.create({
-        activeRunId: body.runId,
-        workspace: body.workspace,
-      });
+      const existing = (await this.sessions.findByWorkspace(body.workspace)).find(
+        (session) => session.status === "active",
+      );
+      const session =
+        existing ??
+        (await this.sessions.create({
+          activeRunId: body.runId,
+          workspace: body.workspace,
+        }));
       const run = await this.runs.declare(session.id, {
         createdAt: Date.now(),
         hypothesisIds: body.hypothesisIds,
         id: body.runId,
       });
+      if (session.activeRunId !== run.id) {
+        await this.sessions.setActiveRun(session.id, run.id);
+      }
       return Response.json(
         {
           ingestUrl: `${origin}/v1/ingest/${session.ingestCapability}`,
@@ -140,6 +211,12 @@ export class ControlApi {
         this.diagnostics.clearRun(clearMatch[1], runId),
       ]);
       return Response.json({ cleared: true, runId, sessionId: clearMatch[1] });
+    }
+
+    const stopMatch = /^\/v1\/control\/sessions\/([a-zA-Z0-9_-]+)\/stop$/.exec(pathname);
+    if (stopMatch?.[1]) {
+      const session = await this.sessions.close(stopMatch[1]);
+      return Response.json({ sessionId: session.id, status: session.status });
     }
 
     return undefined;
