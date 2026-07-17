@@ -110,6 +110,7 @@ export async function parseCli(argv: string[]): Promise<CliInvocation | { helpTe
     .name("debug-mode")
     .description("Collect and query structured runtime evidence")
     .version(packageJson.version)
+    .helpCommand(false)
     .option("--json", "emit machine-readable JSON")
     .showHelpAfterError()
     .exitOverride()

@@ -22,11 +22,22 @@ async function runCli(
 }
 
 describe("Commander CLI help and errors", () => {
-  test("--help lists only the redesigned public commands", async () => {
+  test("explicitly disables Commander's automatic help command", async () => {
+    const source = await Bun.file(join(import.meta.dir, "../../src/cli/program.ts")).text();
+
+    expect(source).toContain(".helpCommand(false)");
+  });
+
+  test("--help lists exactly the redesigned public commands", async () => {
     const result = await parseCli(["--help"]);
     const help = "helpText" in result ? result.helpText : "";
+    const commandLines = help.split("Commands:\n")[1] ?? "";
+    const commands = commandLines
+      .split("\n")
+      .map((line) => /^ {2}([a-z][a-z-]*)(?:\s|\[)/.exec(line)?.[1])
+      .filter((command): command is string => command !== undefined);
 
-    for (const command of [
+    expect(commands).toEqual([
       "create",
       "template",
       "reset",
@@ -36,12 +47,7 @@ describe("Commander CLI help and errors", () => {
       "sessions",
       "clean",
       "stop",
-    ]) {
-      expect(help).toContain(command);
-    }
-    for (const removed of ["start", "probe", "run begin", "clear", "daemon stop"]) {
-      expect(help).not.toContain(removed);
-    }
+    ]);
   });
 
   test("command help is generated without creating an invocation", async () => {
@@ -58,6 +64,7 @@ describe("Commander CLI help and errors", () => {
   });
 
   test("rejects unknown commands and missing required options", async () => {
+    await expectExitTwo(["help"]);
     await expectExitTwo(["start"]);
     await expectExitTwo(["logs"]);
   });
@@ -101,6 +108,7 @@ describe("Commander CLI help and errors", () => {
     }
 
     for (const argv of [
+      ["help"],
       ["unknown"],
       ["logs"],
       ["create", "--workspace", "."],
