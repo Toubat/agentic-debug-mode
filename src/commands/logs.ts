@@ -9,7 +9,10 @@ import { optionInteger, optionString, optionStrings } from "./options";
 
 interface LogsResponse {
   diagnostics: EvidenceDiagnostic[];
-  events: NormalizedEvent[];
+  records: NormalizedEvent[];
+  recordsByHypothesis: Record<string, number>;
+  totalRecords: number;
+  watermark: number;
 }
 
 function diagnosticsWarnings(diagnostics: EvidenceDiagnostic[]): Warning[] {
@@ -76,16 +79,28 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
     const daemon = await ensureDaemon({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
-    const response = await requestDaemonControl<LogsResponse>(
-      daemon,
-      `/v1/control/sessions/${sessionId}/logs`,
-    );
+    const hypothesisFilter = optionStrings(args.options, "hypothesis");
     const requestedSnapshot = optionString(args.options, "snapshot");
-    const watermark = requestedSnapshot
+    const requestedWatermark = requestedSnapshot
       ? verifySnapshotCursor(daemon.controlToken, requestedSnapshot, {
           sessionId,
         }).watermark
-      : response.events.reduce((maximum, event) => Math.max(maximum, event.sequence), 0);
+      : undefined;
+    const search = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    for (const hypothesisId of hypothesisFilter) {
+      search.append("hypothesis", hypothesisId);
+    }
+    if (requestedWatermark !== undefined) {
+      search.set("watermark", String(requestedWatermark));
+    }
+    const response = await requestDaemonControl<LogsResponse>(
+      daemon,
+      `/v1/control/sessions/${sessionId}/logs?${search}`,
+    );
+    const watermark = requestedWatermark ?? response.watermark;
     const snapshot =
       requestedSnapshot ??
       createSnapshotCursor(daemon.controlToken, {
@@ -93,15 +108,15 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
         sessionId,
         watermark,
       });
-    const snapshotEvents = response.events.filter((event) => event.sequence <= watermark);
-    const hypothesisFilter = optionStrings(args.options, "hypothesis");
-    const filtered =
-      hypothesisFilter.length === 0
-        ? snapshotEvents
-        : snapshotEvents.filter((event) => hypothesisFilter.includes(event.hypothesisId));
-    const records = filtered.slice(offset, offset + limit);
+    const records = response.records;
+    const malformedRecords = response.diagnostics.filter(
+      (item) => item.reason === "INVALID_JSON" || item.reason === "INVALID_SCHEMA",
+    ).length;
+    const recordsByHypothesis = response.recordsByHypothesis;
+    const hasPrevious = offset > 0;
+    const hasNext = offset + records.length < response.totalRecords;
     const hints: Hint[] = [];
-    if (offset > 0) {
+    if (hasPrevious) {
       const previousOffset = Math.max(0, offset - limit);
       hints.push({
         action: "previous-page",
@@ -109,7 +124,7 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
         message: "Read the previous page.",
       });
     }
-    if (offset + records.length < filtered.length) {
+    if (hasNext) {
       hints.push({
         action: "next-page",
         command: pageCommand(args, sessionId, offset + limit, limit, snapshot),
@@ -125,7 +140,19 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
     }
     return {
       command: "logs",
-      data: { records },
+      data: {
+        mode: "streaming",
+        pagination: {
+          hasNext,
+          hasPrevious,
+          limit,
+          ...(hasNext ? { nextOffset: offset + limit } : {}),
+          offset,
+          ...(hasPrevious ? { previousOffset: Math.max(0, offset - limit) } : {}),
+          snapshot,
+        },
+        records,
+      },
       hints,
       ok: true,
       partial: false,
@@ -136,14 +163,12 @@ export async function logsCommand(args: ParsedArgs): Promise<CommandOutput> {
       },
       statistics: {
         limit,
-        malformedRecords: response.diagnostics.filter(
-          (item) => item.reason === "INVALID_JSON" || item.reason === "INVALID_SCHEMA",
-        ).length,
+        malformedRecords,
         offset,
+        recordsByHypothesis,
         returnedRecords: records.length,
-        snapshot,
-        totalRecords: filtered.length,
-        validRecords: snapshotEvents.length,
+        totalRecords: response.totalRecords + malformedRecords,
+        validRecords: response.totalRecords,
       },
       warnings: diagnosticsWarnings(response.diagnostics),
     };

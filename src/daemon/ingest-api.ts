@@ -56,7 +56,7 @@ export class IngestionService {
       recoverable: {},
       redactedPreview: "[redacted invalid JSON]",
       suggestedAction:
-        "Inspect the generated probe serializer, correct it, clear the run, and reproduce.",
+        "Inspect the generated probe serializer, correct it, reset the session, and reproduce.",
     };
     await this.diagnostics.append(session.id, [diagnostic]);
     return true;

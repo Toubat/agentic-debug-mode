@@ -67,7 +67,7 @@ function diagnostic(
     recoverable: recoverable(raw),
     redactedPreview: "[redacted invalid event]",
     suggestedAction:
-      "Inspect the generated probe, correct its structured fields, clear the run, and reproduce.",
+      "Inspect the generated probe, correct its structured fields, reset the session, and reproduce.",
   };
 }
 

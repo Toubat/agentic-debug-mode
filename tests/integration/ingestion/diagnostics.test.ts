@@ -64,11 +64,15 @@ describe("ingestion diagnostics", () => {
       expect((await new EventStore(persistence).read(created.sessionId))[0]?.data).toEqual({
         nested: { token: "[REDACTED]" },
       });
-      expect(
-        (await new DiagnosticStore(persistence).read(created.sessionId)).map(
-          (diagnostic) => diagnostic.reason,
-        ),
-      ).toEqual(["SECRET_REDACTED", "INVALID_JSON"]);
+      const diagnostics = await new DiagnosticStore(persistence).read(created.sessionId);
+      expect(diagnostics.map((diagnostic) => diagnostic.reason)).toEqual([
+        "SECRET_REDACTED",
+        "INVALID_JSON",
+      ]);
+      expect(diagnostics.map((diagnostic) => diagnostic.suggestedAction)).toEqual([
+        "Inspect the generated probe, correct its structured fields, reset the session, and reproduce.",
+        "Inspect the generated probe serializer, correct it, reset the session, and reproduce.",
+      ]);
     } finally {
       await requestDaemonShutdown(connection);
     }
