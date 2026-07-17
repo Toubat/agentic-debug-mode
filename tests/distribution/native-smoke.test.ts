@@ -49,7 +49,7 @@ describe("standalone native addon distribution", () => {
       },
       query: [{ embedded: true }],
       termination: {
-        reason: "not-implemented",
+        reason: "invalid-identity",
         terminated: false,
       },
     });

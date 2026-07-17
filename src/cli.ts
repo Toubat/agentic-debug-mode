@@ -1,7 +1,9 @@
+import { ensureDaemon } from "./cli/daemon-manager";
 import { dispatch } from "./cli/dispatch";
 import { exitCodeForError } from "./cli/exit-codes";
 import { parseArgs } from "./cli/parse-args";
 import { renderPretty } from "./cli/pretty-renderer";
+import { runDaemon } from "./daemon/main";
 import { runJaq } from "./native/query";
 import { inspectProcess, terminateIfIdentityMatches } from "./native/system";
 
@@ -9,11 +11,39 @@ async function main(): Promise<number> {
   const argv = Bun.argv.slice(2);
   const command = argv[0];
 
+  if (command === "__ensure-daemon") {
+    const connection = await ensureDaemon({
+      homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
+    });
+    console.log(
+      JSON.stringify(connection, (key, value) => (key === "controlToken" ? undefined : value)),
+    );
+    return 0;
+  }
+
+  if (command === "__daemon") {
+    const nonceIndex = argv.indexOf("--nonce");
+    const nonce = nonceIndex >= 0 ? argv[nonceIndex + 1] : undefined;
+    if (!nonce) {
+      console.error("Internal daemon startup requires --nonce");
+      return 2;
+    }
+    await runDaemon({
+      homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
+      nonce,
+    });
+    return 0;
+  }
+
   if (command === "__native-smoke") {
     const pid = process.pid;
+    const processInspection = inspectProcess(pid);
     console.log(
       JSON.stringify({
-        process: inspectProcess(pid),
+        process: {
+          exists: processInspection.exists,
+          pid: processInspection.pid,
+        },
         query: runJaq(".", { embedded: true }),
         termination: terminateIfIdentityMatches(pid, "smoke-test"),
       }),
