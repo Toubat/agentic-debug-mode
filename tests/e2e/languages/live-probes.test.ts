@@ -239,7 +239,16 @@ interface ForwardStats {
   dropped: number;
 }
 
-function startCaptureProxy(destination: string) {
+interface CaptureProxyOptions {
+  // Forward attempts before giving up (production default is 4).
+  maxAttempts?: number;
+  // Test hook fired before each forward attempt; throwing simulates a transient
+  // socket failure (ECONNRESET / connection-reuse exhaustion) for that attempt.
+  beforeForward?: (attempt: number) => void | Promise<void>;
+}
+
+function startCaptureProxy(destination: string, options: CaptureProxyOptions = {}) {
+  const maxAttempts = options.maxAttempts ?? 4;
   const bodies: string[] = [];
   const forwardStats: ForwardStats = { thrown: 0, nonOk: [], dropped: 0 };
   const server = Bun.serve({
@@ -255,10 +264,10 @@ function startCaptureProxy(destination: string) {
       // up after exhausting attempts. A forward that never crashes the test
       // process on teardown is still fine because the retries are bounded.
       // Counters make any residual loss observable in the assertion message.
-      const maxAttempts = 4;
       let delivered = false;
       for (let attempt = 1; attempt <= maxAttempts && !delivered; attempt += 1) {
         try {
+          await options.beforeForward?.(attempt);
           const forwarded = await fetch(destination, {
             body,
             headers: { "Content-Type": "application/x-ndjson" },
@@ -857,4 +866,114 @@ describe("live language templates", () => {
       90_000,
     );
   }
+});
+
+// Fault-injection coverage for the capture proxy's forward retry. This is the
+// load-bearing proof that the retry recovers the exact failure CI hit — a
+// transient forward failure that the previous bare `catch {}` swallowed, so the
+// daemon ingested fewer events than were captured. Uses a lightweight fake
+// daemon instead of the full fixture pipeline so it runs fast and deterministic.
+describe("capture proxy forward retry", () => {
+  function startFakeDaemon(handler: (body: string) => number) {
+    const received: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const body = await request.text();
+        received.push(body);
+        return new Response(null, { status: handler(body) });
+      },
+    });
+    return {
+      received,
+      stop: () => server.stop(true),
+      url: `http://127.0.0.1:${server.port}/ingest`,
+    };
+  }
+
+  async function post(url: string, body: string) {
+    const response = await fetch(url, { body, method: "POST" });
+    await response.arrayBuffer();
+  }
+
+  test("recovers every event when the first forward attempt throws", async () => {
+    const daemon = startFakeDaemon(() => 202);
+    // Fail attempt 1 of every forward, exactly the transient failure CI hit.
+    const proxy = startCaptureProxy(daemon.url, {
+      beforeForward: (attempt) => {
+        if (attempt === 1) {
+          throw new Error("injected transient forward failure");
+        }
+      },
+    });
+    try {
+      const count = 40;
+      await Promise.all(
+        Array.from({ length: count }, (_, index) => post(proxy.url, `{"id":${index}}`)),
+      );
+      // Retry delivered all of them: no drops, and the daemon saw each event.
+      expect(new Set(daemon.received).size).toBe(count);
+      expect(proxy.forwardStats.dropped).toBe(0);
+      expect(proxy.forwardStats.thrown).toBe(count);
+    } finally {
+      proxy.stop();
+      daemon.stop();
+    }
+  });
+
+  test("re-sends after a non-2xx response without duplicating ingested events", async () => {
+    // The daemon rejects each body once (503), then accepts it (202) — proving
+    // the retry re-sends and that a duplicate delivery is idempotent: the count
+    // of distinct events stays exact even though the daemon received each twice.
+    const seen = new Set<string>();
+    const daemon = startFakeDaemon((body) => {
+      if (seen.has(body)) {
+        return 202;
+      }
+      seen.add(body);
+      return 503;
+    });
+    const proxy = startCaptureProxy(daemon.url);
+    try {
+      const count = 40;
+      await Promise.all(
+        Array.from({ length: count }, (_, index) => post(proxy.url, `{"id":${index}}`)),
+      );
+      expect(new Set(daemon.received).size).toBe(count);
+      expect(daemon.received).toHaveLength(count * 2);
+      expect(proxy.forwardStats.nonOk).toHaveLength(count);
+      expect(proxy.forwardStats.dropped).toBe(0);
+    } finally {
+      proxy.stop();
+      daemon.stop();
+    }
+  });
+
+  test("with retries disabled the injected fault drops events and stats attribute it", async () => {
+    // RED baseline: attempts=1 is the retry-disabled variant. The same injected
+    // fault that the retry recovers above now loses every event, and the
+    // ForwardStats counters surface exactly how many — the attribution the
+    // sustained test appends to its failure message.
+    const daemon = startFakeDaemon(() => 202);
+    const proxy = startCaptureProxy(daemon.url, {
+      maxAttempts: 1,
+      beforeForward: () => {
+        throw new Error("injected transient forward failure");
+      },
+    });
+    try {
+      const count = 10;
+      await Promise.all(
+        Array.from({ length: count }, (_, index) => post(proxy.url, `{"id":${index}}`)),
+      );
+      expect(new Set(daemon.received).size).toBe(0);
+      expect(proxy.forwardStats.dropped).toBe(count);
+      expect(proxy.forwardStats.thrown).toBe(count);
+      // The attribution string the sustained waiter surfaces carries the drop.
+      expect(JSON.stringify(proxy.forwardStats)).toContain('"dropped":10');
+    } finally {
+      proxy.stop();
+      daemon.stop();
+    }
+  });
 });
