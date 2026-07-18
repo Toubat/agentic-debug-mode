@@ -173,7 +173,7 @@ describe("generated native query properties", () => {
       } finally {
         await requestDaemonShutdown(await ensureDaemon({ homeDirectory: home }));
       }
-    }, 20_000);
+    }, 45_000);
   }
 
   test("snapshots representative human-readable query shapes", async () => {

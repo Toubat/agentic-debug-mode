@@ -17,7 +17,7 @@ import {
   writeDaemonState,
 } from "../daemon/state-file";
 import { inspectProcess, terminateIfIdentityMatches } from "../native/system";
-import { readDaemonHealth, requestDaemonShutdown } from "./daemon-client";
+import { DaemonControlError, readDaemonHealth, requestDaemonShutdown } from "./daemon-client";
 
 export interface DaemonManagerClock {
   now(): number;
@@ -100,6 +100,10 @@ function spawnDaemon(
       ...process.env,
       AGENT_DEBUG_MODE_HOME_OVERRIDE: homeDirectory,
     },
+    // On Windows, detach into its own process group so the daemon's lifetime is
+    // decoupled from the spawning CLI process (which exits immediately). POSIX
+    // already survives parent exit via unref(); keep its behavior unchanged.
+    detached: process.platform === "win32",
     stderr: "ignore",
     stdin: "ignore",
     stdout: "ignore",
@@ -339,6 +343,51 @@ async function ensureDaemonOnce(
   }
 
   throw new Error("Unable to acquire the daemon startup lock before the deadline");
+}
+
+/**
+ * Classify a daemon interaction failure as a transient connection problem
+ * (worth retrying) rather than a typed command failure. On Windows a freshly
+ * spawned daemon or one whose listener briefly drops a connection surfaces as a
+ * closed socket / refused connection, or as an untyped DAEMON_UNAVAILABLE from a
+ * request that raced a file replacement. Typed command failures (any other
+ * DaemonControlError code) are never treated as transient.
+ */
+export function isTransientDaemonError(error: unknown): boolean {
+  if (error instanceof DaemonControlError) {
+    return error.code === "DAEMON_UNAVAILABLE";
+  }
+  if (error instanceof Error) {
+    return /socket connection|connection (was )?closed|connection reset|ECONNREFUSED|ECONNRESET|EPIPE|Unable to connect|failed to connect|fetch failed/i.test(
+      `${error.message} ${(error as { code?: string }).code ?? ""}`,
+    );
+  }
+  return false;
+}
+
+/**
+ * Run a daemon interaction with a bounded retry on transient connection errors.
+ * Each attempt re-runs the provided action, which is expected to re-discover or
+ * re-establish the daemon connection. Typed command failures propagate immediately.
+ */
+export async function withTransientDaemonRetry<T>(
+  action: () => Promise<T>,
+  attempts = 3,
+  sleep: (milliseconds: number) => Promise<void> = (milliseconds) => Bun.sleep(milliseconds),
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await action();
+    } catch (error) {
+      if (!isTransientDaemonError(error) || attempt === attempts - 1) {
+        throw error;
+      }
+      lastError = error;
+      await sleep(25 * (attempt + 1));
+    }
+  }
+  throw lastError;
 }
 
 export async function ensureDaemon(options: EnsureDaemonOptions = {}): Promise<DaemonConnection> {

@@ -48,6 +48,23 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bun run typecheck
-      - run: bun run test
+      - run: bun run build:native
+      - name: Core tests (contract, unit, integration, core e2e, skill)
+        run: bun run test:core
+        env:
+          REQUIRE_TEMPLATE_RUNTIMES: "1"
+      - name: Language e2e tests
+        if: ${{ !cancelled() }}
+        run: bun run test:languages
+        env:
+          REQUIRE_TEMPLATE_RUNTIMES: "1"
+      - name: Distribution tests
+        if: ${{ !cancelled() }}
+        run: bun run test:distribution
+        env:
+          REQUIRE_TEMPLATE_RUNTIMES: "1"
+      - name: System tests
+        if: ${{ !cancelled() }}
+        run: bun run test:system
         env:
           REQUIRE_TEMPLATE_RUNTIMES: "1"

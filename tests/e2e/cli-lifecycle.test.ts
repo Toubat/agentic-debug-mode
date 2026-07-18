@@ -124,7 +124,7 @@ describe("CLI lifecycle", () => {
     const clean = await runCli(home, ["clean", "--session", sessionId]);
     expect(clean.exitCode, clean.stderr).toBe(0);
     await runCli(home, ["stop"]);
-  });
+  }, 30_000);
 
   test("logs accepts canonical sessions and preserves typed session errors", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));

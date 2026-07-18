@@ -12,7 +12,11 @@
     "build:binary": "bun scripts/build-binary.ts",
     "check": "biome check .",
     "check:write": "biome check --write .",
-    "test": "bun run build:native && bun test --max-concurrency 1 tests/contract tests/unit tests/integration tests/e2e/cli-lifecycle.test.ts tests/e2e/logs.test.ts tests/e2e/query.test.ts tests/e2e/query-generated.test.ts tests/skill && bun test tests/e2e/languages && bun test tests/distribution && bun test tests/system",
+    "test": "bun run build:native && bun run test:core && bun run test:languages && bun run test:distribution && bun run test:system",
+    "test:core": "bun test --max-concurrency 1 tests/contract tests/unit tests/integration tests/e2e/cli-lifecycle.test.ts tests/e2e/logs.test.ts tests/e2e/query.test.ts tests/e2e/query-generated.test.ts tests/skill",
+    "test:languages": "bun test tests/e2e/languages",
+    "test:distribution": "bun test tests/distribution",
+    "test:system": "bun test tests/system",
     "typecheck": "tsc --noEmit"
   },
   "napi": {

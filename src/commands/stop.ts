@@ -1,4 +1,4 @@
-import { requestDaemonShutdown } from "../cli/daemon-client";
+import { readDaemonHealth, requestDaemonShutdown } from "../cli/daemon-client";
 import type { CommandOutput } from "../cli/output-schema";
 import { getOrCreateControlToken } from "../daemon/auth";
 import { Persistence } from "../daemon/persistence";
@@ -11,7 +11,14 @@ export async function stopCommand(): Promise<CommandOutput> {
     const state = await readDaemonState(persistence.stateRoot);
     if (state) {
       const controlToken = await getOrCreateControlToken(persistence.stateRoot);
-      await requestDaemonShutdown({ ...state, controlToken });
+      const connection = { ...state, controlToken };
+      // A recorded daemon that no longer answers a health probe has already
+      // exited (common on Windows, where the process group can be torn down out
+      // from under a stale state file). Treat it as already stopped rather than
+      // failing the command trying to shut down an unreachable process.
+      if (await readDaemonHealth(connection)) {
+        await requestDaemonShutdown(connection);
+      }
     }
     return {
       command: "stop",
