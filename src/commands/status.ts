@@ -34,10 +34,18 @@ export async function statusCommand(
               message: `${response.diagnostics.length} evidence diagnostics require attention.`,
             },
           ];
+    const malformedRecords = response.diagnostics.filter(
+      (item) => item.reason === "INVALID_JSON" || item.reason === "INVALID_SCHEMA",
+    ).length;
     return {
       command: "status",
       data: {
         diagnostics: response.diagnostics,
+        health: {
+          daemon: "healthy",
+          ingestion: response.diagnostics.length === 0 ? "healthy" : "degraded",
+          queryEngine: "ready",
+        },
         session: response.session,
       },
       hints:
@@ -45,9 +53,9 @@ export async function statusCommand(
           ? []
           : [
               {
-                action: "clear",
-                command: `debug-mode clear --session ${sessionId}`,
-                message: "Fix the listed emitters, clear this session, and reproduce.",
+                action: "reset",
+                command: `debug-mode reset --session ${sessionId}`,
+                message: "Fix the listed emitters, reset this session, and reproduce.",
               },
             ],
       ok: true,
@@ -59,6 +67,9 @@ export async function statusCommand(
       statistics: {
         diagnosticCount: response.diagnostics.length,
         eventCount: response.eventCount,
+        malformedRecords,
+        totalRecords: response.eventCount + malformedRecords,
+        validRecords: response.eventCount,
       },
       warnings,
     };

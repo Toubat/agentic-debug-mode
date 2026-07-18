@@ -13,9 +13,6 @@ function renderScope(result: CommandResult): string | undefined {
   if (result.scope.sessionId) {
     parts.push(`Session ${result.scope.sessionId}`);
   }
-  if (result.scope.runId) {
-    parts.push(`Run ${result.scope.runId}`);
-  }
   return parts.length > 0 ? parts.join("  •  ") : undefined;
 }
 
@@ -190,23 +187,216 @@ function renderQueryResults(results: unknown[]): string[] {
   ]);
 }
 
+function renderIngestData(data: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  if (typeof data.ingestUrl === "string") {
+    lines.push(`Ingest URL   ${data.ingestUrl}`);
+  }
+  if (typeof data.appendPath === "string") {
+    lines.push(`Append Path  ${data.appendPath}`);
+  }
+  return lines.length > 0
+    ? lines
+    : Object.entries(data).flatMap(([key, value]) => [key, ...renderValue(value)]);
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === "string")
+  );
+}
+
+function renderTemplateData(data: Record<string, unknown>): string[] | undefined {
+  const { callTemplate, eventSchema, helperTemplate, placeholders } = data;
+  if (
+    typeof helperTemplate !== "string" ||
+    typeof callTemplate !== "string" ||
+    !isStringRecord(placeholders) ||
+    !isStringRecord(eventSchema)
+  ) {
+    return undefined;
+  }
+  const placeholderWidth = Math.max(0, ...Object.keys(placeholders).map((name) => name.length));
+  return [
+    "HELPER TEMPLATE",
+    ...helperTemplate.split("\n"),
+    "",
+    "CALL TEMPLATE",
+    ...callTemplate.split("\n"),
+    "",
+    "PLACEHOLDERS",
+    ...Object.entries(placeholders).map(
+      ([name, meaning]) => `${name.padEnd(placeholderWidth)}  ${meaning}`,
+    ),
+    "",
+    "EVENT SCHEMA",
+    ...Object.entries(eventSchema).map(([field, type]) => `${field}  ${type}`),
+  ];
+}
+
+interface EvidenceHealth {
+  daemon: string;
+  ingestion: string;
+  queryEngine: string;
+}
+
+interface StatusDiagnostic {
+  diagnosticId: string;
+  message: string;
+  reason: string;
+  recoverable: { hypothesisId?: string; location?: string };
+  redactedPreview: string;
+  suggestedAction: string;
+}
+
+function isEvidenceHealth(value: unknown): value is EvidenceHealth {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const health = value as Record<string, unknown>;
+  return (
+    typeof health.daemon === "string" &&
+    typeof health.ingestion === "string" &&
+    typeof health.queryEngine === "string"
+  );
+}
+
+function renderStatusData(data: Record<string, unknown>): string[] | undefined {
+  if (!isEvidenceHealth(data.health)) {
+    return undefined;
+  }
+  const health = data.health;
+  const lines = [
+    `Service ${health.daemon}  •  Ingestion ${health.ingestion}  •  Query engine ${health.queryEngine}`,
+  ];
+  const diagnostics = Array.isArray(data.diagnostics)
+    ? (data.diagnostics as StatusDiagnostic[])
+    : [];
+  if (diagnostics.length > 0) {
+    lines.push("", "MALFORMED RECORDS");
+    for (const diagnostic of diagnostics) {
+      const source = [
+        diagnostic.recoverable?.location,
+        diagnostic.recoverable?.hypothesisId
+          ? `Hypothesis ${diagnostic.recoverable.hypothesisId}`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join("  •  ");
+      lines.push("", `  ${diagnostic.diagnosticId}  ${diagnostic.reason}`);
+      if (source) {
+        lines.push(`  Source    ${source}`);
+      }
+      lines.push(
+        `  Problem   ${diagnostic.message}`,
+        `  Preview   ${diagnostic.redactedPreview}`,
+        `  Fix       ${diagnostic.suggestedAction}`,
+      );
+    }
+  }
+  return lines;
+}
+
+interface SessionSummary {
+  createdAt: number;
+  eventCount: number;
+  id: string;
+}
+
+function isSessionSummary(value: unknown): value is SessionSummary {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Record<string, unknown>;
+  return (
+    typeof summary.id === "string" &&
+    typeof summary.createdAt === "number" &&
+    typeof summary.eventCount === "number"
+  );
+}
+
+function renderSessionsData(data: Record<string, unknown>): string[] | undefined {
+  if (!Array.isArray(data.sessions) || !data.sessions.every(isSessionSummary)) {
+    return undefined;
+  }
+  const sessions = data.sessions as SessionSummary[];
+  if (sessions.length === 0) {
+    return ["No sessions"];
+  }
+  return renderRows(
+    ["SESSION ID", "CREATED AT", "EVENTS"],
+    sessions.map((session) => [
+      session.id,
+      formatTimestamp(session.createdAt),
+      String(session.eventCount),
+    ]),
+  );
+}
+
 function renderData(result: CommandResult): string[] {
+  if (result.command === "start") {
+    // #region agent log
+    fetch("http://127.0.0.1:7284/ingest/574ecce0-7d92-432e-9a2a-c58a7ebb2081", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "4ca86a" },
+      body: JSON.stringify({
+        sessionId: "4ca86a",
+        runId: "baseline",
+        hypothesisId: "H2",
+        location: "src/cli/pretty-renderer.ts:194",
+        message: "Pretty renderer receives start envelope",
+        data: {
+          dataKeys:
+            result.data && typeof result.data === "object" && !Array.isArray(result.data)
+              ? Object.keys(result.data)
+              : [],
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }
   if (result.data === null || typeof result.data !== "object" || Array.isArray(result.data)) {
     return renderValue(result.data);
   }
+  const data = result.data as Record<string, unknown>;
+  if (result.command === "create" || result.command === "reset") {
+    return renderIngestData(data);
+  }
+  if (result.command === "template") {
+    const rendered = renderTemplateData(data);
+    if (rendered) {
+      return rendered;
+    }
+  }
+  if (result.command === "status") {
+    const rendered = renderStatusData(data);
+    if (rendered) {
+      return rendered;
+    }
+  }
+  if (result.command === "sessions") {
+    const rendered = renderSessionsData(data);
+    if (rendered) {
+      return rendered;
+    }
+  }
   if (
     result.command === "logs" &&
-    "records" in result.data &&
-    Array.isArray(result.data.records) &&
-    result.data.records.every(isLogRecord)
+    "records" in data &&
+    Array.isArray(data.records) &&
+    data.records.every(isLogRecord)
   ) {
-    return renderLogTable(result.data.records);
+    return renderLogTable(data.records);
   }
-  if (result.command === "query" && "rows" in result.data && Array.isArray(result.data.rows)) {
-    return renderQueryResults(result.data.rows);
+  if (result.command === "query" && "rows" in data && Array.isArray(data.rows)) {
+    return renderQueryResults(data.rows);
   }
 
-  return Object.entries(result.data).flatMap(([key, value]) => [key, ...renderValue(value)]);
+  return Object.entries(data).flatMap(([key, value]) => [key, ...renderValue(value)]);
 }
 
 function renderHint(hint: Hint): string[] {

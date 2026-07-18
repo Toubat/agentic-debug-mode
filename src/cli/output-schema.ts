@@ -11,8 +11,6 @@ export interface Hint {
 
 export interface CommandScope {
   hypothesisFilter?: string[] | null;
-  hypothesisIds?: string[];
-  runId?: string;
   sessionId?: string;
 }
 

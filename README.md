@@ -2,9 +2,9 @@
 
 `agentic-debug-mode` is an evidence-first debugging CLI and installable Agent Skill. It gives
 coding agents isolated debug sessions, generated runtime probes, bounded log reads, embedded jaq
-queries, and a repeatable baseline/post-fix workflow.
+queries, and a repeatable reset-and-reproduce workflow.
 
-The CLI is a standalone executable compiled with Bun. A user-scoped daemon starts on demand and
+The CLI is a standalone executable compiled with Bun. A background service starts on demand and
 stores all local state under `~/.agent-debug-mode/`.
 
 ## Install the CLI
@@ -45,57 +45,51 @@ Omit `--global` for a project-scoped install.
 
 ## Quick start
 
-Start a baseline run with explicit hypotheses:
+Create one session for the investigation and get a language template:
 
 ```bash
-debug-mode start \
-  --workspace "$PWD" \
-  --language typescript \
-  --run-id baseline \
-  --hypothesis H1 \
-  --hypothesis H2 \
-  --json
+debug-mode create
+debug-mode template --language typescript --ingest http
 ```
 
-Insert the returned helper once and copy the returned call template for each observation. Keep
-all generated `agent log` region markers.
-
-After reproducing the bug, read a bounded result:
+Insert the returned helper once and copy the returned call template for each observation. Keep all
+`agent log` region markers. Then reset the session and reproduce the bug yourself:
 
 ```bash
-debug-mode logs \
-  --session <session-id> \
-  --run-id baseline \
-  --limit 100
+debug-mode reset --session <session-id>
+```
+
+Read a bounded result:
+
+```bash
+debug-mode logs --session <session-id> --limit 100
 ```
 
 Filter or transform evidence with embedded jaq:
 
 ```bash
-debug-mode query \
-  --session <session-id> \
-  --run-id baseline \
-  'select(.message | test("timeout|deadline"; "i"))'
+debug-mode query --session <session-id> 'select(.message | test("timeout|deadline"; "i"))'
 ```
 
-Use `--slurp` for operations across the complete selected record stream:
+Use `--slurp` for operations across the complete record stream:
 
 ```bash
-debug-mode query \
-  --session <session-id> \
-  --run-id baseline \
-  --slurp \
+debug-mode query --session <session-id> --slurp \
   'group_by(.hypothesisId) | map({hypothesisId: .[0].hypothesisId, count: length})'
 ```
 
+Apply the fix, `reset` and reproduce again, and compare evidence. Remove the regions and
+`debug-mode stop` once the post-fix evidence proves the fix.
+
 ## Supported probes
 
-- JavaScript: non-blocking loopback HTTP;
-- TypeScript: non-blocking loopback HTTP;
-- Python: bounded direct NDJSON append.
+Advertised, end-to-end-tested language and transport pairs:
 
-Each advertised renderer is exercised through a compiled CLI, its real language runtime, and the
-public `start` and `logs` commands.
+- JavaScript + HTTP, TypeScript + HTTP;
+- Python, Go, Ruby, PHP, PowerShell, C#, and Swift + direct NDJSON append.
+
+Each renderer is exercised through the compiled CLI, its real language runtime, and the public
+`template` and `logs` commands.
 
 ## Development
 
