@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { lstat, mkdtemp, rm, symlink } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initializeStateRoot, resolveStateRoot } from "../../../src/platform/state-root";
@@ -42,6 +42,22 @@ describe("user state root", () => {
 
     await expect(initializeStateRoot(home)).rejects.toThrow(
       "State root must not be a symbolic link",
+    );
+  });
+
+  test("refuses state layout directories redirected through symbolic links", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
+    const redirected = await mkdtemp(join(tmpdir(), "agent-debug-mode-redirect-"));
+    temporaryDirectories.push(home, redirected);
+    const stateRoot = resolveStateRoot(home);
+    await mkdir(stateRoot);
+    await symlink(redirected, join(stateRoot, "sessions"));
+
+    await expect(initializeStateRoot(home)).rejects.toThrow(
+      "State directory must not be a symbolic link",
     );
   });
 });
