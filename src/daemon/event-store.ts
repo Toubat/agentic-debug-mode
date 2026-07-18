@@ -143,6 +143,17 @@ export class EventStore {
       .map((line) => JSON.parse(line) as NormalizedEvent);
   }
 
+  async hasId(sessionId: string, eventId: string): Promise<boolean> {
+    return this.runSessionOperation(sessionId, async () => {
+      let ids = this.knownIds.get(sessionId);
+      if (!ids) {
+        ids = new Set((await this.readFile(sessionId)).map((item) => item.id));
+        this.knownIds.set(sessionId, ids);
+      }
+      return ids.has(eventId);
+    });
+  }
+
   async append(sessionId: string, event: NormalizedEvent): Promise<boolean> {
     let appended = false;
     await this.runSessionOperation(sessionId, async () => {

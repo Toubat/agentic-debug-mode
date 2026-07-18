@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { EvidenceDiagnostic } from "./diagnostic";
 import type { JsonValue, NormalizedEvent } from "./event";
+import { MAX_HYPOTHESIS_ID_LENGTH } from "./ingestion";
 import { redactSecrets } from "./redaction";
 
 export interface EventValidationContext {
+  eventId?: string;
   receivedAt: number;
   sequence: number;
 }
@@ -86,6 +88,7 @@ export function validateAndNormalizeEvent(
   const valid =
     typeof raw.hypothesisId === "string" &&
     raw.hypothesisId.length > 0 &&
+    raw.hypothesisId.length <= MAX_HYPOTHESIS_ID_LENGTH &&
     typeof raw.timestamp === "number" &&
     Number.isFinite(raw.timestamp) &&
     typeof raw.location === "string" &&
@@ -108,7 +111,7 @@ export function validateAndNormalizeEvent(
     };
   }
 
-  const id = `evt_${randomUUID()}`;
+  const id = context.eventId ?? `evt_${randomUUID()}`;
   const redaction = redactSecrets(raw.data as JsonValue);
   const event: NormalizedEvent = {
     data: redaction.value,

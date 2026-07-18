@@ -1,5 +1,4 @@
-const CANONICAL_SESSION_ID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+import { isCanonicalSessionId } from "../domain/session-id";
 
 export class InvalidSessionIdError extends Error {
   readonly code = "INVALID_ARGUMENTS";
@@ -11,7 +10,7 @@ export class InvalidSessionIdError extends Error {
 }
 
 export function sessionPathSegment(sessionId: string): string {
-  if (!CANONICAL_SESSION_ID.test(sessionId)) {
+  if (!isCanonicalSessionId(sessionId)) {
     throw new InvalidSessionIdError();
   }
   return encodeURIComponent(sessionId);

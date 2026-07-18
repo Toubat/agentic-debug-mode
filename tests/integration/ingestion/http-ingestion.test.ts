@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -209,7 +210,23 @@ describe("HTTP ingestion", () => {
       });
       expect(obsolete.status).toBe(404);
 
-      const unknown = await fetch(`${origin}/ingest/not-a-session`, {
+      for (const invalidSessionId of [
+        "not-a-session",
+        "%2e%2e%2fnot-a-session",
+        "%2Fnot-a-session",
+        "00000000-0000-4000-8000-00000000000%61",
+        randomUUID().toUpperCase(),
+      ]) {
+        const invalid = await fetch(`${origin}/ingest/${invalidSessionId}`, {
+          body: JSON.stringify(raw),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        expect(invalid.status).toBe(400);
+        expect(await invalid.json()).toEqual({ code: "INVALID_ARGUMENTS" });
+      }
+
+      const unknown = await fetch(`${origin}/ingest/${randomUUID()}`, {
         body: JSON.stringify(raw),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -217,20 +234,13 @@ describe("HTTP ingestion", () => {
       expect(unknown.status).toBe(404);
       expect(await unknown.json()).toEqual({ code: "SESSION_NOT_FOUND" });
 
-      const unknownMalformed = await fetch(`${origin}/ingest/not-a-session`, {
+      const unknownMalformed = await fetch(`${origin}/ingest/${randomUUID()}`, {
         body: "{not-json\n",
         headers: { "Content-Type": "application/x-ndjson" },
         method: "POST",
       });
       expect(unknownMalformed.status).toBe(404);
       expect(await unknownMalformed.json()).toEqual({ code: "SESSION_NOT_FOUND" });
-
-      const malformed = await fetch(`${origin}/ingest/%2e%2e%2fnot-a-session`, {
-        body: JSON.stringify(raw),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      expect(malformed.status).toBe(404);
     } finally {
       await requestDaemonShutdown(connection);
     }

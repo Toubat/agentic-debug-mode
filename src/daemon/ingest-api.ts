@@ -1,12 +1,24 @@
-import { randomUUID } from "node:crypto";
-import type { EvidenceDiagnostic } from "../domain/diagnostic";
 import { validateAndNormalizeEvent } from "../domain/event-validation";
+import {
+  ingestionRecordByteLength,
+  MAX_INGESTION_RECORD_BYTES,
+  malformedIngestionDiagnostic,
+} from "../domain/ingestion";
+import { isCanonicalSessionId } from "../domain/session-id";
 import type { DiagnosticStore } from "./diagnostic-store";
 import type { EventStore } from "./event-store";
 import type { EventSequence } from "./sequence";
 import type { SessionRegistry } from "./session-registry";
 
-const MAX_BODY_BYTES = 64 * 1024;
+export type IngestionResult = "accepted" | "invalid" | "not-found" | "too-large";
+
+export interface IngestionOptions {
+  eventId?: string;
+}
+
+export interface IngestApiHooks {
+  afterBodyRead?(): Promise<void>;
+}
 
 function corsHeaders(origin: string | null): HeadersInit {
   if (!origin) {
@@ -49,34 +61,46 @@ export class IngestionService {
     );
   }
 
-  async recordInvalidJson(sessionId: string, message: string): Promise<boolean> {
+  async ingestRecord(
+    sessionId: string,
+    record: string,
+    options: IngestionOptions = {},
+  ): Promise<IngestionResult> {
     return this.events.runSessionOperation(sessionId, async () => {
-      const session = await this.sessions.get(sessionId);
-      if (!session) {
-        return false;
+      if (!(await this.sessions.get(sessionId))) {
+        return "not-found";
       }
-      const diagnostic: EvidenceDiagnostic = {
-        diagnosticId: `diag_${randomUUID()}`,
-        message,
-        observedAt: Date.now(),
-        reason: "INVALID_JSON",
-        recoverable: {},
-        redactedPreview: "[redacted invalid JSON]",
-        suggestedAction:
-          "Inspect the generated probe serializer, correct it, reset the session, and reproduce.",
-      };
-      await this.diagnostics.append(session.id, [diagnostic]);
-      return true;
+      if (ingestionRecordByteLength(record) > MAX_INGESTION_RECORD_BYTES) {
+        await this.diagnostics.append(sessionId, [
+          malformedIngestionDiagnostic(record, Date.now()),
+        ]);
+        return "too-large";
+      }
+      let value: unknown;
+      try {
+        value = JSON.parse(record);
+      } catch {
+        await this.diagnostics.append(sessionId, [
+          malformedIngestionDiagnostic(record, Date.now()),
+        ]);
+        return "invalid";
+      }
+      return this.ingest(sessionId, value, options);
     });
   }
 
-  async ingest(sessionId: string, value: unknown): Promise<"accepted" | "invalid" | "not-found"> {
+  async ingest(
+    sessionId: string,
+    value: unknown,
+    options: IngestionOptions = {},
+  ): Promise<"accepted" | "invalid" | "not-found"> {
     return this.events.runSessionOperation(sessionId, async () => {
       const session = await this.sessions.get(sessionId);
       if (!session) {
         return "not-found";
       }
       const result = validateAndNormalizeEvent(value, {
+        eventId: options.eventId,
         receivedAt: Date.now(),
         sequence: 0,
       });
@@ -84,8 +108,13 @@ export class IngestionService {
         await this.diagnostics.append(session.id, result.diagnostics);
         return "invalid";
       }
+      if (await this.events.hasId(session.id, result.event.id)) {
+        return "accepted";
+      }
       result.event.sequence = await this.sequence.next(session.id);
-      await this.events.append(session.id, result.event);
+      if (!(await this.events.append(session.id, result.event))) {
+        throw new Error("Event ID became duplicated inside a serialized session operation");
+      }
       await this.diagnostics.append(session.id, result.diagnostics);
       return "accepted";
     });
@@ -93,18 +122,18 @@ export class IngestionService {
 }
 
 export class IngestApi {
-  constructor(private readonly ingestion: IngestionService) {}
+  constructor(
+    private readonly ingestion: IngestionService,
+    private readonly hooks: IngestApiHooks = {},
+  ) {}
 
   async handle(request: Request, pathname: string): Promise<Response | undefined> {
-    const match = /^\/ingest\/([a-zA-Z0-9_-]+)$/.exec(pathname);
-    if (!match) {
-      return pathname.startsWith("/ingest/")
-        ? Response.json({ error: "not-found" }, { status: 404 })
-        : undefined;
+    if (!pathname.startsWith("/ingest/")) {
+      return undefined;
     }
-    const sessionId = match[1];
-    if (!sessionId) {
-      return Response.json({ error: "not-found" }, { status: 404 });
+    const sessionId = pathname.slice("/ingest/".length);
+    if (!isCanonicalSessionId(sessionId)) {
+      return Response.json({ code: "INVALID_ARGUMENTS" }, { status: 400 });
     }
     const origin = request.headers.get("origin");
     if (!isAllowedOrigin(origin)) {
@@ -117,66 +146,46 @@ export class IngestApi {
       return Response.json({ error: "method-not-allowed" }, { status: 405 });
     }
     if (!(await this.ingestion.hasSession(sessionId))) {
-      return Response.json(
-        { code: "SESSION_NOT_FOUND" },
-        { headers: corsHeaders(origin), status: 404 },
-      );
+      return this.sessionNotFound(origin);
     }
 
     const text = await request.text();
-    if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
-      return Response.json(
-        { error: "payload-too-large" },
-        { headers: corsHeaders(origin), status: 413 },
-      );
-    }
+    await this.hooks.afterBodyRead?.();
     const contentType = request.headers.get("content-type") ?? "";
-    const values: unknown[] = [];
-    if (contentType.includes("application/x-ndjson")) {
-      for (const line of text.split("\n").filter(Boolean)) {
-        try {
-          values.push(JSON.parse(line));
-        } catch {
-          await this.ingestion.recordInvalidJson(
-            sessionId,
-            "An NDJSON record could not be parsed.",
-          );
-        }
-      }
-    } else {
-      try {
-        values.push(JSON.parse(text));
-      } catch {
-        const found = await this.ingestion.recordInvalidJson(
-          sessionId,
-          "The JSON request body could not be parsed.",
-        );
-        return Response.json(
-          { accepted: found, malformed: 1 },
-          {
-            headers: corsHeaders(origin),
-            status: found ? 202 : 404,
-          },
-        );
-      }
-    }
-
+    const records = contentType.includes("application/x-ndjson")
+      ? text.split("\n").filter(Boolean)
+      : [text];
     let accepted = 0;
     let invalid = 0;
-    for (const value of values) {
-      const result = await this.ingestion.ingest(sessionId, value);
-      if (result === "not-found") {
-        return Response.json(
-          { code: "SESSION_NOT_FOUND" },
-          { headers: corsHeaders(origin), status: 404 },
-        );
-      }
-      if (result === "accepted") {
-        accepted += 1;
-      } else {
-        invalid += 1;
+    for (const record of records) {
+      const result = await this.ingestion.ingestRecord(sessionId, record);
+      switch (result) {
+        case "accepted":
+          accepted += 1;
+          break;
+        case "invalid":
+          invalid += 1;
+          break;
+        case "not-found":
+          return this.sessionNotFound(origin);
+        case "too-large":
+          return Response.json(
+            { error: "payload-too-large" },
+            { headers: corsHeaders(origin), status: 413 },
+          );
+        default: {
+          const exhaustive: never = result;
+          throw new Error(`Unhandled ingestion result: ${exhaustive}`);
+        }
       }
     }
     return Response.json({ accepted, invalid }, { headers: corsHeaders(origin), status: 202 });
+  }
+
+  private sessionNotFound(origin: string | null): Response {
+    return Response.json(
+      { code: "SESSION_NOT_FOUND" },
+      { headers: corsHeaders(origin), status: 404 },
+    );
   }
 }

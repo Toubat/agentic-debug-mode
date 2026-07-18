@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { type FileHandle, open } from "node:fs/promises";
+import { MAX_INGESTION_RECORD_BYTES } from "../domain/ingestion";
 import { readJsonFile, writeJsonAtomic } from "../platform/atomic-file";
 import type { IngestionService } from "./ingest-api";
 import type { Persistence } from "./persistence";
@@ -11,6 +13,21 @@ interface IncomingCursor {
   offset: number;
 }
 
+export interface DirectAppendObserverHooks {
+  afterEventAppend?(): Promise<void>;
+}
+
+function directAppendEventId(sessionId: string, offset: number, line: Buffer): string {
+  const digest = createHash("sha256")
+    .update(sessionId)
+    .update("\0")
+    .update(String(offset))
+    .update("\0")
+    .update(line)
+    .digest("hex");
+  return `evt_${digest}`;
+}
+
 export class DirectAppendObserver {
   private interval: ReturnType<typeof setInterval> | undefined;
   private lastError: Error | undefined;
@@ -20,6 +37,7 @@ export class DirectAppendObserver {
     private readonly persistence: Persistence,
     private readonly sessions: SessionRegistry,
     private readonly ingestion: IngestionService,
+    private readonly hooks: DirectAppendObserverHooks = {},
   ) {}
 
   get error(): Error | undefined {
@@ -84,32 +102,43 @@ export class DirectAppendObserver {
       const contents = buffer.subarray(0, bytesRead);
       const finalNewline = contents.lastIndexOf(0x0a);
       if (finalNewline < 0) {
-        if (available > MAX_READ_BYTES) {
+        if (available > MAX_INGESTION_RECORD_BYTES) {
           const recordEnd = await this.findRecordEnd(incoming, offset + bytesRead, stats.size);
           if (recordEnd !== undefined) {
-            await this.ingestion.recordInvalidJson(
-              sessionId,
-              "A direct-append record exceeded the maximum supported size.",
-            );
+            await this.ingestion.ingestRecord(sessionId, contents.toString("utf8"));
             await writeJsonAtomic(cursorPath, { offset: recordEnd });
           }
         }
         return;
       }
       const complete = contents.subarray(0, finalNewline + 1);
-      for (const line of complete.toString("utf8").split("\n").filter(Boolean)) {
-        try {
-          await this.ingestion.ingest(sessionId, JSON.parse(line));
-        } catch (error) {
-          if (error instanceof SyntaxError) {
-            await this.ingestion.recordInvalidJson(
-              sessionId,
-              "A direct-append NDJSON record could not be parsed.",
-            );
-            continue;
-          }
-          throw error;
+      let relativeOffset = 0;
+      while (relativeOffset < complete.byteLength) {
+        const newline = complete.indexOf(0x0a, relativeOffset);
+        if (newline < 0) {
+          break;
         }
+        const line = complete.subarray(relativeOffset, newline);
+        if (line.byteLength > 0) {
+          const result = await this.ingestion.ingestRecord(sessionId, line.toString("utf8"), {
+            eventId: directAppendEventId(sessionId, offset + relativeOffset, line),
+          });
+          switch (result) {
+            case "accepted":
+              await this.hooks.afterEventAppend?.();
+              break;
+            case "invalid":
+            case "too-large":
+              break;
+            case "not-found":
+              return;
+            default: {
+              const exhaustive: never = result;
+              throw new Error(`Unhandled ingestion result: ${exhaustive}`);
+            }
+          }
+        }
+        relativeOffset = newline + 1;
       }
       await writeJsonAtomic(cursorPath, {
         offset: offset + complete.byteLength,
