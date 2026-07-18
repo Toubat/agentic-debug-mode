@@ -110,7 +110,7 @@ export function renderPowerShellTemplate(): ProbeTemplates {
       "        }",
       '        $json = ($eventData | ConvertTo-Json -Compress -Depth 8 -ErrorAction Stop -WarningAction SilentlyContinue) + "`n"',
       "        $bytes = [Text.UTF8Encoding]::new($false).GetBytes($json)",
-      "        if ($bytes.Length -gt 65_536) { return }",
+      "        if ($bytes.Length -gt 65536) { return }",
       '        $stream = [IO.File]::Open("__APPEND_PATH__", [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)',
       "        try {",
       "            $stream.Write($bytes, 0, $bytes.Length)",

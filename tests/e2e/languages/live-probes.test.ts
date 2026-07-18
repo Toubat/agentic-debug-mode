@@ -310,10 +310,10 @@ function materialize(
     .filter(Boolean)
     .join("\n");
   return source
-    .replace("/* __HELPER_TEMPLATE__ */", helper)
-    .replace("/* __CALL_TEMPLATE__ */", call)
-    .replace("__HELPER_TEMPLATE__", helper)
-    .replace("__CALL_TEMPLATE__", call);
+    .replace("/* __HELPER_TEMPLATE__ */", () => helper)
+    .replace("/* __CALL_TEMPLATE__ */", () => call)
+    .replace("__HELPER_TEMPLATE__", () => helper)
+    .replace("__CALL_TEMPLATE__", () => call);
 }
 
 async function awaitRecords(home: string, sessionId: string, expectedCount: number) {
