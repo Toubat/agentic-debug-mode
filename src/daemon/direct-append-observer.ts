@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import { type FileHandle, open } from "node:fs/promises";
-import { MAX_INGESTION_RECORD_BYTES } from "../domain/ingestion";
+import {
+  directAppendDiagnosticId,
+  directAppendEventId,
+  directSourceContentHash,
+  MAX_INGESTION_RECORD_BYTES,
+  MAX_MALFORMED_PREVIEW_BYTES,
+} from "../domain/ingestion";
 import { readJsonFile, writeJsonAtomic } from "../platform/atomic-file";
 import type { IngestionService } from "./ingest-api";
 import type { Persistence } from "./persistence";
@@ -14,18 +20,15 @@ interface IncomingCursor {
 }
 
 export interface DirectAppendObserverHooks {
+  afterDiagnosticAppend?(): Promise<void>;
   afterEventAppend?(): Promise<void>;
 }
 
-function directAppendEventId(sessionId: string, offset: number, line: Buffer): string {
-  const digest = createHash("sha256")
-    .update(sessionId)
-    .update("\0")
-    .update(String(offset))
-    .update("\0")
-    .update(line)
-    .digest("hex");
-  return `evt_${digest}`;
+interface OversizedRecordScan {
+  actualByteLength: number;
+  contentHash: string;
+  previewByteLength: number;
+  recordEnd: number;
 }
 
 export class DirectAppendObserver {
@@ -103,10 +106,18 @@ export class DirectAppendObserver {
       const finalNewline = contents.lastIndexOf(0x0a);
       if (finalNewline < 0) {
         if (available > MAX_INGESTION_RECORD_BYTES) {
-          const recordEnd = await this.findRecordEnd(incoming, offset + bytesRead, stats.size);
-          if (recordEnd !== undefined) {
-            await this.ingestion.ingestRecord(sessionId, contents.toString("utf8"));
-            await writeJsonAtomic(cursorPath, { offset: recordEnd });
+          const scan = await this.scanOversizedRecord(incoming, offset, stats.size);
+          if (scan) {
+            const result = await this.ingestion.ingestOversizedRecord(sessionId, {
+              actualByteLength: scan.actualByteLength,
+              diagnosticId: directAppendDiagnosticId(sessionId, offset, scan.contentHash),
+              previewByteLength: scan.previewByteLength,
+            });
+            if (result === "not-found") {
+              return;
+            }
+            await this.hooks.afterDiagnosticAppend?.();
+            await writeJsonAtomic(cursorPath, { offset: scan.recordEnd });
           }
         }
         return;
@@ -120,15 +131,31 @@ export class DirectAppendObserver {
         }
         const line = complete.subarray(relativeOffset, newline);
         if (line.byteLength > 0) {
-          const result = await this.ingestion.ingestRecord(sessionId, line.toString("utf8"), {
-            eventId: directAppendEventId(sessionId, offset + relativeOffset, line),
-          });
+          const sourceOffset = offset + relativeOffset;
+          const contentHash = directSourceContentHash(line);
+          const diagnosticId = directAppendDiagnosticId(sessionId, sourceOffset, contentHash);
+          const result =
+            line.byteLength > MAX_INGESTION_RECORD_BYTES
+              ? await this.ingestion.ingestOversizedRecord(sessionId, {
+                  actualByteLength: line.byteLength,
+                  diagnosticId,
+                  previewByteLength: Math.min(line.byteLength, MAX_MALFORMED_PREVIEW_BYTES),
+                })
+              : await this.ingestion.ingestRecord(sessionId, line.toString("utf8"), {
+                  actualByteLength: line.byteLength,
+                  diagnosticId,
+                  eventId: directAppendEventId(sessionId, sourceOffset, contentHash),
+                  previewByteLength: Math.min(line.byteLength, MAX_MALFORMED_PREVIEW_BYTES),
+                });
           switch (result) {
             case "accepted":
               await this.hooks.afterEventAppend?.();
               break;
             case "invalid":
+              break;
+            case "malformed":
             case "too-large":
+              await this.hooks.afterDiagnosticAppend?.();
               break;
             case "not-found":
               return;
@@ -148,12 +175,15 @@ export class DirectAppendObserver {
     }
   }
 
-  private async findRecordEnd(
+  private async scanOversizedRecord(
     file: FileHandle,
     start: number,
     size: number,
-  ): Promise<number | undefined> {
+  ): Promise<OversizedRecordScan | undefined> {
     let position = start;
+    let actualByteLength = 0;
+    let previewByteLength = 0;
+    const hash = createHash("sha256");
     const buffer = Buffer.alloc(MAX_READ_BYTES);
     while (position < size) {
       const { bytesRead } = await file.read(
@@ -166,10 +196,22 @@ export class DirectAppendObserver {
         return undefined;
       }
       const newline = buffer.subarray(0, bytesRead).indexOf(0x0a);
+      const recordBytes = buffer.subarray(0, newline >= 0 ? newline : bytesRead);
+      hash.update(recordBytes);
+      actualByteLength += recordBytes.byteLength;
+      previewByteLength += Math.min(
+        recordBytes.byteLength,
+        MAX_MALFORMED_PREVIEW_BYTES - previewByteLength,
+      );
       if (newline >= 0) {
-        return position + newline + 1;
+        return {
+          actualByteLength,
+          contentHash: hash.digest("hex"),
+          previewByteLength,
+          recordEnd: position + newline + 1,
+        };
       }
-      position += bytesRead;
+      position += recordBytes.byteLength;
     }
     return undefined;
   }

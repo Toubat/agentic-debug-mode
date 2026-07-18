@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import packageJson from "../../package.json";
 import { inspectProcess } from "../native/system";
 import { isAuthorized } from "./auth";
@@ -9,8 +11,80 @@ import {
   DAEMON_SCHEMA_VERSION,
   type DaemonMetadata,
 } from "./protocol";
+import { parseRawIngestionTarget } from "./raw-request-target";
 import { createShutdownController } from "./shutdown";
 import { publishReadyCandidate, removeOwnedDaemonState, removeReadyCandidate } from "./state-file";
+
+const MAX_REQUEST_BODY_BYTES = 128 * 1024;
+
+class RequestBodyTooLargeError extends Error {}
+
+function incomingHeaders(request: IncomingMessage): Headers {
+  const headers = new Headers();
+  for (let index = 0; index < request.rawHeaders.length; index += 2) {
+    const name = request.rawHeaders[index];
+    const value = request.rawHeaders[index + 1];
+    if (name && value) {
+      headers.append(name, value);
+    }
+  }
+  return headers;
+}
+
+async function requestBody(request: IncomingMessage): Promise<Buffer> {
+  const declaredLength = Number(request.headers["content-length"] ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BODY_BYTES) {
+    throw new RequestBodyTooLargeError();
+  }
+  const chunks: Buffer[] = [];
+  let length = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    length += buffer.byteLength;
+    if (length > MAX_REQUEST_BODY_BYTES) {
+      throw new RequestBodyTooLargeError();
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
+function writeJson(response: ServerResponse, status: number, value: unknown): void {
+  const body = JSON.stringify(value);
+  response.writeHead(status, {
+    "Content-Length": Buffer.byteLength(body),
+    "Content-Type": "application/json",
+  });
+  response.end(body);
+}
+
+async function writeWebResponse(outgoing: ServerResponse, response: Response): Promise<void> {
+  outgoing.statusCode = response.status;
+  response.headers.forEach((value, name) => {
+    outgoing.setHeader(name, value);
+  });
+  if (!response.body) {
+    outgoing.end();
+    return;
+  }
+  const reader = response.body.getReader();
+  try {
+    while (!outgoing.destroyed) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+      if (!outgoing.write(Buffer.from(chunk.value))) {
+        await once(outgoing, "drain");
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  if (!outgoing.destroyed) {
+    outgoing.end();
+  }
+}
 
 export interface StartDaemonServerOptions {
   controlToken: string;
@@ -27,43 +101,98 @@ export async function startDaemonServer(
   const shutdown = createShutdownController();
   let metadata: DaemonMetadata;
   let stopping = false;
-  let server: ReturnType<typeof Bun.serve>;
+  let server: ReturnType<typeof createServer>;
 
   const stop = async () => {
     if (stopping) {
       return;
     }
     stopping = true;
-    await server.stop(true);
+    const closed = new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+    server.closeAllConnections();
+    await closed;
     await removeOwnedDaemonState(options.stateRoot, options.nonce);
     await removeReadyCandidate(options.stateRoot, options.nonce);
     shutdown.begin();
   };
 
-  server = Bun.serve({
-    hostname: DAEMON_HOST,
-    maxRequestBodySize: 128 * 1024,
-    port: 0,
-    async fetch(request) {
-      const url = new URL(request.url);
-      const ingestResponse = await options.ingestApi.handle(request, url.pathname);
+  server = createServer((incoming, outgoing) => {
+    void (async () => {
+      const rawTarget = incoming.url ?? "";
+      const ingestionTarget = parseRawIngestionTarget(rawTarget);
+      if (ingestionTarget.kind === "invalid-ingestion") {
+        writeJson(outgoing, 400, { code: "INVALID_ARGUMENTS" });
+        return;
+      }
+      const host = incoming.headers.host ?? DAEMON_HOST;
+      const absoluteTarget = /^https?:\/\//i.test(rawTarget)
+        ? rawTarget
+        : `http://${host}${rawTarget.startsWith("/") ? rawTarget : "/"}`;
+      let url: URL;
+      try {
+        url = new URL(absoluteTarget);
+      } catch {
+        writeJson(outgoing, 400, { code: "INVALID_ARGUMENTS" });
+        return;
+      }
+      const abort = new AbortController();
+      incoming.once("aborted", () => abort.abort());
+      outgoing.once("close", () => abort.abort());
+      let body: Buffer;
+      try {
+        body = await requestBody(incoming);
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          writeJson(outgoing, 413, { error: "payload-too-large" });
+          return;
+        }
+        throw error;
+      }
+      const method = incoming.method ?? "GET";
+      const request = new Request(url, {
+        body:
+          method === "GET" || method === "HEAD" || body.byteLength === 0
+            ? undefined
+            : new Uint8Array(body),
+        headers: incomingHeaders(incoming),
+        method,
+        signal: abort.signal,
+      });
+      const pathname =
+        ingestionTarget.kind === "ingestion" ? ingestionTarget.pathname : url.pathname;
+      const ingestResponse = await options.ingestApi.handle(request, pathname);
       if (ingestResponse) {
-        return ingestResponse;
+        await writeWebResponse(outgoing, ingestResponse);
+        return;
       }
       if (!isAuthorized(request, options.controlToken)) {
-        return Response.json({ error: "unauthorized" }, { status: 401 });
+        writeJson(outgoing, 401, { error: "unauthorized" });
+        return;
       }
       if (request.method === "GET" && url.pathname === "/v1/control/health") {
-        return Response.json({
-          ...metadata,
-          activeSessions: await options.getActiveSessionCount(),
-        });
+        await writeWebResponse(
+          outgoing,
+          Response.json({
+            ...metadata,
+            activeSessions: await options.getActiveSessionCount(),
+          }),
+        );
+        return;
       }
       if (request.method === "POST" && url.pathname === "/v1/control/shutdown") {
         setTimeout(() => {
           void stop();
         }, 10);
-        return Response.json({ accepted: true }, { status: 202 });
+        await writeWebResponse(outgoing, Response.json({ accepted: true }, { status: 202 }));
+        return;
       }
       const controlResponse = await options.controlApi.handle(
         request,
@@ -71,21 +200,37 @@ export async function startDaemonServer(
         `http://${metadata.host}:${metadata.port}`,
       );
       if (controlResponse) {
-        return controlResponse;
+        await writeWebResponse(outgoing, controlResponse);
+        return;
       }
-      return Response.json({ error: "not-found" }, { status: 404 });
-    },
+      writeJson(outgoing, 404, { error: "not-found" });
+    })().catch((error: unknown) => {
+      if (!outgoing.headersSent) {
+        writeJson(outgoing, 500, { error: "internal-server-error" });
+      } else {
+        outgoing.destroy(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, DAEMON_HOST, () => {
+      server.off("error", reject);
+      resolve();
+    });
   });
 
   const [processInspection, activeSessions] = await Promise.all([
     Promise.resolve(inspectProcess(process.pid)),
     options.getActiveSessionCount(),
   ]);
-  const port = server.port;
-  if (port === undefined) {
-    await server.stop(true);
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.closeAllConnections();
+    server.close();
     throw new Error("Daemon server did not report its assigned port");
   }
+  const port = address.port;
   metadata = {
     activeSessions,
     binaryVersion: packageJson.version,

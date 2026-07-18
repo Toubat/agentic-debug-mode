@@ -2,6 +2,7 @@ import { validateAndNormalizeEvent } from "../domain/event-validation";
 import {
   ingestionRecordByteLength,
   MAX_INGESTION_RECORD_BYTES,
+  MAX_MALFORMED_PREVIEW_BYTES,
   malformedIngestionDiagnostic,
 } from "../domain/ingestion";
 import { isCanonicalSessionId } from "../domain/session-id";
@@ -10,10 +11,19 @@ import type { EventStore } from "./event-store";
 import type { EventSequence } from "./sequence";
 import type { SessionRegistry } from "./session-registry";
 
-export type IngestionResult = "accepted" | "invalid" | "not-found" | "too-large";
+export type IngestionResult = "accepted" | "invalid" | "malformed" | "not-found" | "too-large";
 
 export interface IngestionOptions {
+  actualByteLength?: number;
+  diagnosticId?: string;
   eventId?: string;
+  previewByteLength?: number;
+}
+
+export interface OversizedIngestionOptions {
+  actualByteLength: number;
+  diagnosticId?: string;
+  previewByteLength: number;
 }
 
 export interface IngestApiHooks {
@@ -70,9 +80,17 @@ export class IngestionService {
       if (!(await this.sessions.get(sessionId))) {
         return "not-found";
       }
-      if (ingestionRecordByteLength(record) > MAX_INGESTION_RECORD_BYTES) {
+      const actualByteLength = options.actualByteLength ?? ingestionRecordByteLength(record);
+      const previewByteLength =
+        options.previewByteLength ?? Math.min(actualByteLength, MAX_MALFORMED_PREVIEW_BYTES);
+      if (actualByteLength > MAX_INGESTION_RECORD_BYTES) {
         await this.diagnostics.append(sessionId, [
-          malformedIngestionDiagnostic(record, Date.now()),
+          malformedIngestionDiagnostic({
+            actualByteLength,
+            diagnosticId: options.diagnosticId,
+            observedAt: Date.now(),
+            previewByteLength,
+          }),
         ]);
         return "too-large";
       }
@@ -81,11 +99,36 @@ export class IngestionService {
         value = JSON.parse(record);
       } catch {
         await this.diagnostics.append(sessionId, [
-          malformedIngestionDiagnostic(record, Date.now()),
+          malformedIngestionDiagnostic({
+            actualByteLength,
+            diagnosticId: options.diagnosticId,
+            observedAt: Date.now(),
+            previewByteLength,
+          }),
         ]);
-        return "invalid";
+        return "malformed";
       }
       return this.ingest(sessionId, value, options);
+    });
+  }
+
+  async ingestOversizedRecord(
+    sessionId: string,
+    options: OversizedIngestionOptions,
+  ): Promise<"not-found" | "too-large"> {
+    return this.events.runSessionOperation(sessionId, async () => {
+      if (!(await this.sessions.get(sessionId))) {
+        return "not-found";
+      }
+      await this.diagnostics.append(sessionId, [
+        malformedIngestionDiagnostic({
+          actualByteLength: options.actualByteLength,
+          diagnosticId: options.diagnosticId,
+          observedAt: Date.now(),
+          previewByteLength: options.previewByteLength,
+        }),
+      ]);
+      return "too-large";
     });
   }
 
@@ -164,6 +207,7 @@ export class IngestApi {
           accepted += 1;
           break;
         case "invalid":
+        case "malformed":
           invalid += 1;
           break;
         case "not-found":
