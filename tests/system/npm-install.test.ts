@@ -14,6 +14,10 @@ const supportedTargets = new Set([
   "win32-x64",
 ]);
 
+// On Windows, npm is a `.cmd` shim; Bun.spawn cannot resolve the bare name
+// "npm" from PATH (it does not apply PATHEXT), so resolve the full path first.
+const npmCommand = Bun.which("npm") ?? (process.platform === "win32" ? "npm.cmd" : "npm");
+
 async function run(command: string[], cwd = root, env = process.env) {
   const child = Bun.spawn(command, {
     cwd,
@@ -30,7 +34,7 @@ async function run(command: string[], cwd = root, env = process.env) {
 }
 
 async function pack(directory: string, destination: string): Promise<string> {
-  const result = await run(["npm", "pack", "--pack-destination", destination, directory]);
+  const result = await run([npmCommand, "pack", "--pack-destination", destination, directory]);
   expect(result.exitCode, result.stderr).toBe(0);
   const filename = result.stdout.trim().split("\n").at(-1);
   if (!filename) {
@@ -94,7 +98,7 @@ describe("npm installation", () => {
         '{"name":"install-test","private":true}\n',
       );
       const installed = await run(
-        ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", launcherArchive],
+        [npmCommand, "install", "--ignore-scripts", "--no-audit", "--no-fund", launcherArchive],
         installDirectory,
       );
       expect(installed.exitCode, installed.stderr).toBe(0);

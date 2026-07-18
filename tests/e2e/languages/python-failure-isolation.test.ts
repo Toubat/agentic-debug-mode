@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderTemplate } from "../../../src/probes/render";
 
+const pythonExecutable = Bun.which("python3") ?? Bun.which("python");
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -13,7 +15,7 @@ afterEach(async () => {
 });
 
 describe("Python probe failure isolation", () => {
-  test.skipIf(Bun.which("python3") === null)(
+  test.skipIf(pythonExecutable === null)(
     "never changes application startup when the evidence path cannot open",
     async () => {
       const directory = await mkdtemp(join(tmpdir(), "agent-debug-mode-python-"));
@@ -22,7 +24,9 @@ describe("Python probe failure isolation", () => {
       const source = [
         probe.helperTemplate.replace(
           "__APPEND_PATH__",
-          join(directory, "missing", "incoming.ndjson"),
+          // Escape backslashes so a Windows path (e.g. C:\Users\...) is not
+          // interpreted as an escape sequence inside the Python string literal.
+          join(directory, "missing", "incoming.ndjson").replaceAll("\\", "\\\\"),
         ),
         probe.callTemplate
           .replace("__HYPOTHESIS_ID__", "H1")
@@ -34,7 +38,7 @@ describe("Python probe failure isolation", () => {
       const path = join(directory, "probe.py");
       await writeFile(path, source);
 
-      const child = Bun.spawn([Bun.which("python3") ?? "", path], {
+      const child = Bun.spawn([pythonExecutable ?? "", path], {
         stderr: "pipe",
         stdout: "pipe",
       });

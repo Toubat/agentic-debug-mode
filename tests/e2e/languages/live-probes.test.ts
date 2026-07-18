@@ -237,12 +237,20 @@ function startCaptureProxy(destination: string) {
     async fetch(request) {
       const body = await request.text();
       bodies.push(body);
-      const forwarded = await fetch(destination, {
-        body,
-        headers: { "Content-Type": "application/x-ndjson" },
-        method: "POST",
-      });
-      await forwarded.arrayBuffer();
+      // Forwarding must never surface as an unhandled rejection: a probe fetch
+      // that lands after the daemon has been torn down (or during shutdown)
+      // would otherwise crash the test process on some platforms.
+      try {
+        const forwarded = await fetch(destination, {
+          body,
+          headers: { "Content-Type": "application/x-ndjson" },
+          method: "POST",
+        });
+        await forwarded.arrayBuffer();
+      } catch {
+        // Ignore transient forwarding failures; the assertions inspect captured
+        // bodies and daemon records directly.
+      }
       return new Response("captured-response-body");
     },
   });
@@ -617,7 +625,16 @@ describe("live language templates", () => {
                 "  };",
                 "};",
               ].join("\n");
-        const source = `${instrumentation}\n${fixtureSource}\nconsole.log("cleanup-count:" + __agentCleanupCount);`;
+        // The probes emit fire-and-forget requests, so the cleanup callbacks
+        // settle asynchronously. Poll for all of them to land instead of racing
+        // a fixed sleep, which is unreliable under slow concurrent I/O (Windows).
+        const epilogue = [
+          "for (let __agentWait = 0; __agentWait < 600 && __agentCleanupCount < 200; __agentWait += 1) {",
+          "  await new Promise((resolve) => setTimeout(resolve, 50));",
+          "}",
+          'console.log("cleanup-count:" + __agentCleanupCount);',
+        ].join("\n");
+        const source = `${instrumentation}\n${fixtureSource}\n${epilogue}`;
         const fixturePath = join(workspace, fixture.file);
         await writeFile(fixturePath, materialize(source, rendered.data, fixture, capture.url, 200));
 
@@ -635,7 +652,7 @@ describe("live language templates", () => {
         capture.stop();
         await runCli(home, ["stop", "--json"]);
       }
-    }, 30_000);
+    }, 60_000);
   }
 
   for (const language of ["csharp", "powershell"]) {
