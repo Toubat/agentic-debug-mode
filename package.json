@@ -17,13 +17,17 @@
     "test:languages": "bun test tests/e2e/languages",
     "test:distribution": "bun test tests/distribution",
     "test:system": "bun test tests/system",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "changeset": "changeset",
+    "version": "changeset version && bun scripts/sync-versions.ts",
+    "release:tag": "bun scripts/release-tag.ts"
   },
   "napi": {
     "binaryName": "agentic-debug-mode"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.4",
+    "@changesets/cli": "^2.31.1",
     "@napi-rs/cli": "^3.7.3",
     "@types/bun": "^1.3.14",
     "typescript": "^7.0.2"
