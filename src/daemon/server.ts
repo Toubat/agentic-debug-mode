@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import packageJson from "../../package.json";
 import { inspectProcess } from "../native/system";
+import { ActivityTracker, type Clock, systemClock } from "./activity";
 import { isAuthorized } from "./auth";
 import type { ControlApi } from "./control-api";
 import type { IngestApi } from "./ingest-api";
@@ -98,39 +99,48 @@ async function writeWebResponse(
   response: Response,
   signal: AbortSignal,
   hooks: DaemonServerHooks,
+  activity: ActivityTracker,
 ): Promise<void> {
-  outgoing.statusCode = response.status;
-  response.headers.forEach((value, name) => {
-    outgoing.setHeader(name, value);
-  });
-  if (!response.body) {
-    outgoing.end();
-    return;
-  }
-  const reader = response.body.getReader();
+  const releaseLease = response.headers.get("content-type")?.startsWith("text/event-stream")
+    ? activity.acquireLease()
+    : undefined;
   try {
-    while (!outgoing.destroyed) {
-      const chunk = await reader.read();
-      if (chunk.done) {
-        break;
-      }
-      if (!outgoing.write(Buffer.from(chunk.value))) {
-        if (!(await waitForDrainOrDisconnect(outgoing, signal))) {
+    outgoing.statusCode = response.status;
+    response.headers.forEach((value, name) => {
+      outgoing.setHeader(name, value);
+    });
+    if (!response.body) {
+      outgoing.end();
+      return;
+    }
+    const reader = response.body.getReader();
+    try {
+      while (!outgoing.destroyed) {
+        const chunk = await reader.read();
+        if (chunk.done) {
           break;
         }
+        if (!outgoing.write(Buffer.from(chunk.value))) {
+          if (!(await waitForDrainOrDisconnect(outgoing, signal))) {
+            break;
+          }
+        }
       }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+      hooks.onResponseFinished?.();
+    }
+    if (!outgoing.destroyed) {
+      outgoing.end();
     }
   } finally {
-    await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
-    hooks.onResponseFinished?.();
-  }
-  if (!outgoing.destroyed) {
-    outgoing.end();
+    releaseLease?.();
   }
 }
 
 export interface StartDaemonServerOptions {
+  clock?: Clock;
   controlToken: string;
   controlApi: ControlApi;
   getActiveSessionCount(): Promise<number>;
@@ -142,17 +152,20 @@ export interface StartDaemonServerOptions {
 
 export async function startDaemonServer(
   options: StartDaemonServerOptions,
-): Promise<{ metadata: DaemonMetadata; stopped: Promise<void> }> {
+): Promise<{ activity: ActivityTracker; metadata: DaemonMetadata; stopped: Promise<void> }> {
   const shutdown = createShutdownController();
   let metadata: DaemonMetadata;
   let stopping = false;
   let server: ReturnType<typeof createServer>;
+  const clock = options.clock ?? systemClock;
+  let activity: ActivityTracker;
 
   const stop = async () => {
     if (stopping) {
       return;
     }
     stopping = true;
+    activity.stop();
     const closed = new Promise<void>((resolve, reject) => {
       server.close((error) => {
         if (error) {
@@ -169,7 +182,12 @@ export async function startDaemonServer(
     shutdown.begin();
   };
 
+  activity = new ActivityTracker(clock, () => {
+    void stop();
+  });
+
   server = createServer((incoming, outgoing) => {
+    activity.touch();
     void (async () => {
       const rawTarget = incoming.url ?? "";
       const ingestionTarget = parseRawIngestionTarget(rawTarget);
@@ -215,7 +233,13 @@ export async function startDaemonServer(
         ingestionTarget.kind === "ingestion" ? ingestionTarget.pathname : url.pathname;
       const ingestResponse = await options.ingestApi.handle(request, pathname);
       if (ingestResponse) {
-        await writeWebResponse(outgoing, ingestResponse, abort.signal, options.hooks ?? {});
+        await writeWebResponse(
+          outgoing,
+          ingestResponse,
+          abort.signal,
+          options.hooks ?? {},
+          activity,
+        );
         return;
       }
       if (!isAuthorized(request, options.controlToken)) {
@@ -231,6 +255,7 @@ export async function startDaemonServer(
           }),
           abort.signal,
           options.hooks ?? {},
+          activity,
         );
         return;
       }
@@ -243,6 +268,7 @@ export async function startDaemonServer(
           Response.json({ accepted: true }, { status: 202 }),
           abort.signal,
           options.hooks ?? {},
+          activity,
         );
         return;
       }
@@ -252,7 +278,13 @@ export async function startDaemonServer(
         `http://${metadata.host}:${metadata.port}`,
       );
       if (controlResponse) {
-        await writeWebResponse(outgoing, controlResponse, abort.signal, options.hooks ?? {});
+        await writeWebResponse(
+          outgoing,
+          controlResponse,
+          abort.signal,
+          options.hooks ?? {},
+          activity,
+        );
         return;
       }
       writeJson(outgoing, 404, { error: "not-found" });
@@ -296,7 +328,7 @@ export async function startDaemonServer(
     },
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     schemaVersion: DAEMON_SCHEMA_VERSION,
-    startedAt: Date.now(),
+    startedAt: clock.now(),
   };
   await publishReadyCandidate(options.stateRoot, metadata);
 
@@ -306,5 +338,5 @@ export async function startDaemonServer(
   process.once("SIGINT", signalStop);
   process.once("SIGTERM", signalStop);
 
-  return { metadata, stopped: shutdown.promise };
+  return { activity, metadata, stopped: shutdown.promise };
 }

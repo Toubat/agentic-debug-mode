@@ -22,14 +22,18 @@ export async function runDaemon(options: RunDaemonOptions): Promise<void> {
   const sequence = new EventSequence(events);
   const sessions = new SessionRegistry(persistence, events, diagnostics, sequence);
   const ingestion = new IngestionService(sessions, events, diagnostics, sequence);
-  const directAppendObserver = new DirectAppendObserver(persistence, sessions, ingestion);
-  const { stopped } = await startDaemonServer({
+  const { activity, stopped } = await startDaemonServer({
     controlToken,
     controlApi: new ControlApi(sessions, events, diagnostics),
     getActiveSessionCount: async () => (await sessions.list({ all: true })).length,
     ingestApi: new IngestApi(ingestion),
     nonce: options.nonce,
     stateRoot: persistence.stateRoot,
+  });
+  const directAppendObserver = new DirectAppendObserver(persistence, sessions, ingestion, {
+    onRecordProcessed() {
+      activity.touch();
+    },
   });
   directAppendObserver.start();
   try {

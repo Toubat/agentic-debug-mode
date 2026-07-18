@@ -22,6 +22,7 @@ interface IncomingCursor {
 export interface DirectAppendObserverHooks {
   afterDiagnosticAppend?(): Promise<void>;
   afterEventAppend?(): Promise<void>;
+  onRecordProcessed?(): void;
 }
 
 interface OversizedRecordScan {
@@ -113,6 +114,7 @@ export class DirectAppendObserver {
               diagnosticId: directAppendDiagnosticId(sessionId, offset, scan.contentHash),
               previewByteLength: scan.previewByteLength,
             });
+            this.hooks.onRecordProcessed?.();
             if (result === "not-found") {
               return;
             }
@@ -147,6 +149,7 @@ export class DirectAppendObserver {
                   eventId: directAppendEventId(sessionId, sourceOffset, contentHash),
                   previewByteLength: Math.min(line.byteLength, MAX_MALFORMED_PREVIEW_BYTES),
                 });
+          this.hooks.onRecordProcessed?.();
           switch (result) {
             case "accepted":
               await this.hooks.afterEventAppend?.();
