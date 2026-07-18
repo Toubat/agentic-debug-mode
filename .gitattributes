@@ -1,2 +1,13 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Normalize all text files to LF in the repository and working tree so that
+# Windows checkouts (core.autocrlf=true) do not rewrite files to CRLF, which
+# would make `biome check` (bun run check) fail on carriage returns.
+* text=auto eol=lf
+
+# Binary assets should never be normalized. None are currently tracked, but keep
+# these guards so future additions are handled correctly.
+*.png binary
+*.ico binary
+*.node binary
+*.wasm binary
+*.gz binary
+*.zip binary

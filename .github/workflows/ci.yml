@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-14
+          - ubuntu-24.04
+          - windows-2025
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          coverage: none
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "8.0.x"
+      - uses: mchave3/setup-pwsh@v1.0.0
+        with:
+          version: "7.6.0"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91.0
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run typecheck
+      - run: bun run build:native
+      - name: Core tests (contract, unit, integration, core e2e, skill)
+        run: bun run test:core
+        env:
+          REQUIRE_TEMPLATE_RUNTIMES: "1"
+      - name: Language e2e tests
+        if: ${{ !cancelled() }}
+        run: bun run test:languages
+        env:
+          REQUIRE_TEMPLATE_RUNTIMES: "1"
+      - name: Distribution tests
+        if: ${{ !cancelled() }}
+        run: bun run test:distribution
+        env:
+          REQUIRE_TEMPLATE_RUNTIMES: "1"
+      - name: System tests
+        if: ${{ !cancelled() }}
+        run: bun run test:system
+        env:
+          REQUIRE_TEMPLATE_RUNTIMES: "1"
