@@ -41,6 +41,7 @@ jobs:
       - uses: mchave3/setup-pwsh@v1.0.0
         with:
           version: "7.6.0"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.91.0
