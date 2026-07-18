@@ -325,7 +325,17 @@ function materialize(
 }
 
 async function awaitRecords(home: string, sessionId: string, expectedCount: number) {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  // Slow shared CI runners (macOS especially) ingest a large burst of events
+  // steadily but far slower than a dev laptop, so a fixed poll count races the
+  // ingestion pipeline. Wait on *progress* instead: keep polling as long as the
+  // record count keeps climbing, and only give up after a run of consecutive
+  // polls with no progress (a genuine stall). A generous hard cap bounds the
+  // pathological case where the daemon never ingests anything.
+  const maxStalls = 80;
+  const hardDeadline = Date.now() + 110_000;
+  let lastCount = 0;
+  let stalls = 0;
+  while (Date.now() < hardDeadline) {
     const result = await runCli(home, [
       "logs",
       "--session",
@@ -338,13 +348,25 @@ async function awaitRecords(home: string, sessionId: string, expectedCount: numb
       const output = JSON.parse(result.stdout) as CommandResult<{
         records: Array<Record<string, unknown>>;
       }>;
-      if (output.data.records.length === expectedCount) {
+      const count = output.data.records.length;
+      if (count === expectedCount) {
         return output.data.records;
       }
+      if (count > lastCount) {
+        lastCount = count;
+        stalls = 0;
+      } else {
+        stalls += 1;
+      }
+    } else {
+      stalls += 1;
+    }
+    if (stalls >= maxStalls) {
+      break;
     }
     await Bun.sleep(50);
   }
-  throw new Error(`Timed out waiting for ${expectedCount} fixture events`);
+  throw new Error(`Timed out waiting for ${expectedCount} fixture events (last saw ${lastCount})`);
 }
 
 beforeAll(async () => {
@@ -652,7 +674,7 @@ describe("live language templates", () => {
         capture.stop();
         await runCli(home, ["stop", "--json"]);
       }
-    }, 60_000);
+    }, 120_000);
   }
 
   for (const language of ["csharp", "powershell"]) {
