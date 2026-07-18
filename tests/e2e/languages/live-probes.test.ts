@@ -230,32 +230,62 @@ async function runCli(home: string, args: string[]) {
   });
 }
 
+interface ForwardStats {
+  // Forward attempts that threw (ECONNRESET / connection-reuse exhaustion).
+  thrown: number;
+  // Non-202 daemon responses observed, by status code.
+  nonOk: number[];
+  // Forwards that never landed a 202 after exhausting retries — true event loss.
+  dropped: number;
+}
+
 function startCaptureProxy(destination: string) {
   const bodies: string[] = [];
+  const forwardStats: ForwardStats = { thrown: 0, nonOk: [], dropped: 0 };
   const server = Bun.serve({
     port: 0,
     async fetch(request) {
       const body = await request.text();
       bodies.push(body);
-      // Forwarding must never surface as an unhandled rejection: a probe fetch
-      // that lands after the daemon has been torn down (or during shutdown)
-      // would otherwise crash the test process on some platforms.
-      try {
-        const forwarded = await fetch(destination, {
-          body,
-          headers: { "Content-Type": "application/x-ndjson" },
-          method: "POST",
-        });
-        await forwarded.arrayBuffer();
-      } catch {
-        // Ignore transient forwarding failures; the assertions inspect captured
-        // bodies and daemon records directly.
+      // Under sustained burst emission an individual forward can fail transiently
+      // — the socket resets or a reused connection is exhausted, and Bun's fetch
+      // throws. An earlier bare catch swallowed exactly these, silently dropping
+      // events so the daemon ingested fewer than were captured. Retry a few times
+      // (the daemon dedupes by event id, so re-sends are idempotent) and only give
+      // up after exhausting attempts. A forward that never crashes the test
+      // process on teardown is still fine because the retries are bounded.
+      // Counters make any residual loss observable in the assertion message.
+      const maxAttempts = 4;
+      let delivered = false;
+      for (let attempt = 1; attempt <= maxAttempts && !delivered; attempt += 1) {
+        try {
+          const forwarded = await fetch(destination, {
+            body,
+            headers: { "Content-Type": "application/x-ndjson" },
+            method: "POST",
+          });
+          await forwarded.arrayBuffer();
+          if (forwarded.status === 202) {
+            delivered = true;
+            break;
+          }
+          forwardStats.nonOk.push(forwarded.status);
+        } catch {
+          forwardStats.thrown += 1;
+        }
+        if (attempt < maxAttempts) {
+          await Bun.sleep(25 * attempt);
+        }
+      }
+      if (!delivered) {
+        forwardStats.dropped += 1;
       }
       return new Response("captured-response-body");
     },
   });
   return {
     bodies,
+    forwardStats,
     stop: () => server.stop(true),
     url: `http://127.0.0.1:${server.port}/capture`,
   };
@@ -669,7 +699,17 @@ describe("live language templates", () => {
             expect(body).not.toContain(secret);
           }
         }
-        expect(await awaitRecords(home, created.data.sessionId, 200)).toHaveLength(200);
+        let records: Array<Record<string, unknown>>;
+        try {
+          records = await awaitRecords(home, created.data.sessionId, 200);
+        } catch (error) {
+          // Attribute any loss precisely: distinguish transient forward failures
+          // the proxy recovered from a genuine drop that starved the daemon.
+          throw new Error(
+            `${(error as Error).message} | proxy forward stats: ${JSON.stringify(capture.forwardStats)}`,
+          );
+        }
+        expect(records).toHaveLength(200);
       } finally {
         capture.stop();
         await runCli(home, ["stop", "--json"]);
