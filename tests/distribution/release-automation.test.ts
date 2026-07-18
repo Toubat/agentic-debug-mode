@@ -47,6 +47,8 @@ describe("changesets workflow", () => {
     // Scoped permissions for the Version Packages PR.
     expect(workflow).toContain("contents: write");
     expect(workflow).toContain("pull-requests: write");
+    // Required so the dispatch step can call the Actions API (gh workflow run).
+    expect(workflow).toContain("actions: write");
 
     // changesets/action must be pinned to a full 40-character commit SHA.
     expect(workflow).toMatch(/changesets\/action@[0-9a-f]{40}/);

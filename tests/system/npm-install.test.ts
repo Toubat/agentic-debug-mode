@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
 const root = join(import.meta.dir, "..", "..");
+// The launcher reports the root package version live, so track it rather than a
+// hardcoded string that breaks on every Version Packages release bump.
+const rootVersion = (
+  JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { version: string }
+).version;
 const temporaryDirectories: string[] = [];
 const target = `${process.platform}-${process.arch}`;
 const supportedTargets = new Set([
@@ -118,7 +123,7 @@ describe("npm installation", () => {
         PATH: dirname(node),
       });
       expect(executed.exitCode, executed.stderr).toBe(0);
-      expect(executed.stdout).toContain("0.1.0");
+      expect(executed.stdout).toContain(rootVersion);
     },
     30_000,
   );
