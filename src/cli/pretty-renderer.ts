@@ -337,28 +337,6 @@ function renderSessionsData(data: Record<string, unknown>): string[] | undefined
 }
 
 function renderData(result: CommandResult): string[] {
-  if (result.command === "start") {
-    // #region agent log
-    fetch("http://127.0.0.1:7284/ingest/574ecce0-7d92-432e-9a2a-c58a7ebb2081", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "4ca86a" },
-      body: JSON.stringify({
-        sessionId: "4ca86a",
-        runId: "baseline",
-        hypothesisId: "H2",
-        location: "src/cli/pretty-renderer.ts:194",
-        message: "Pretty renderer receives start envelope",
-        data: {
-          dataKeys:
-            result.data && typeof result.data === "object" && !Array.isArray(result.data)
-              ? Object.keys(result.data)
-              : [],
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-  }
   if (result.data === null || typeof result.data !== "object" || Array.isArray(result.data)) {
     return renderValue(result.data);
   }

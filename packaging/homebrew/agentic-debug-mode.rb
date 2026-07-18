@@ -1,7 +1,7 @@
 class AgenticDebugMode < Formula
   desc "Evidence-first debugging CLI for coding agents"
   homepage "https://github.com/Toubat/debug-mode"
-  version "0.1.0"
+  version "REPLACE_VERSION"
   license "MIT"
 
   on_arm do

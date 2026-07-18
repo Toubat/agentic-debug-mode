@@ -68,5 +68,15 @@ describe("release definitions", () => {
     expect(release).toContain("bun run check");
     expect(release).toContain("bun run typecheck");
     expect(release).toContain("bun run test");
+    expect(release).toContain("checksums.txt");
+    expect(release).toContain("anchore/sbom-action@");
+    expect(release).toContain("agentic-debug-mode.spdx.json");
+    expect(release).toContain("cosign sign-blob");
+    expect(release).toContain("checksums.txt.sig");
+    expect(release).toContain("build:\n    permissions:\n      contents: read");
+    expect(release).toContain(
+      "publish:\n    permissions:\n      contents: write\n      id-token: write",
+    );
+    expect(release).toContain("require('./package.json').version");
   });
 });

@@ -42,7 +42,7 @@ async function pack(directory: string, destination: string): Promise<string> {
 beforeAll(async () => {
   const built = await run([process.execPath, "run", "build"]);
   expect(built.exitCode, built.stderr).toBe(0);
-});
+}, 30_000);
 
 afterAll(async () => {
   await Promise.all(
