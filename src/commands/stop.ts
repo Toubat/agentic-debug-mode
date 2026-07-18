@@ -12,12 +12,18 @@ export async function stopCommand(): Promise<CommandOutput> {
     if (state) {
       const controlToken = await getOrCreateControlToken(persistence.stateRoot);
       const connection = { ...state, controlToken };
-      // A recorded daemon that no longer answers a health probe has already
-      // exited (common on Windows, where the process group can be torn down out
-      // from under a stale state file). Treat it as already stopped rather than
-      // failing the command trying to shut down an unreachable process.
-      if (await readDaemonHealth(connection)) {
+      try {
         await requestDaemonShutdown(connection);
+      } catch (error) {
+        // A recorded daemon that can no longer be reached has already exited
+        // (common on Windows, where a stale state file can outlive the process).
+        // Treat that as already stopped, but only when a health probe confirms
+        // the daemon is truly gone — a daemon that is merely busy must still be
+        // shut down so it does not leak and hold OS resources (e.g. a loaded
+        // native addon that a subsequent build must overwrite).
+        if (await readDaemonHealth(connection)) {
+          throw error;
+        }
       }
     }
     return {
