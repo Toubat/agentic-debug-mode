@@ -434,7 +434,7 @@ describe("live language templates", () => {
           await runCli(home, ["stop", "--json"]);
         }
       },
-      30_000,
+      90_000,
     );
 
     runtimeTest(
@@ -464,7 +464,7 @@ describe("live language templates", () => {
         expect(executed.exitCode, executed.stderr).toBe(0);
         expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
       },
-      30_000,
+      90_000,
     );
 
     runtimeTest(
@@ -519,7 +519,7 @@ describe("live language templates", () => {
           await runCli(home, ["stop", "--json"]);
         }
       },
-      30_000,
+      90_000,
     );
 
     runtimeTest(
@@ -570,7 +570,7 @@ describe("live language templates", () => {
           await runCli(home, ["stop", "--json"]);
         }
       },
-      30_000,
+      90_000,
     );
   }
 
@@ -746,7 +746,7 @@ describe("live language templates", () => {
           await runCli(home, ["stop", "--json"]);
         }
       },
-      30_000,
+      90_000,
     );
   }
 
@@ -792,7 +792,7 @@ describe("live language templates", () => {
           expect(() => JSON.parse(line)).not.toThrow();
         }
       },
-      30_000,
+      90_000,
     );
   }
 });

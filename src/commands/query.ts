@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
-import { requestDaemonControl } from "../cli/daemon-client";
+import { DaemonControlError, requestDaemonControl } from "../cli/daemon-client";
 import { ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput, Warning } from "../cli/output-schema";
 import type { CliInvocation } from "../cli/program";
@@ -193,10 +193,22 @@ export async function queryCommand(
       nativeError = error;
     }
     await testHooks.afterNative?.();
-    const postflight = await requestDaemonControl<QueryInputResponse>(
-      daemon,
-      `/v1/control/sessions/${sessionPath}/status`,
-    );
+    let postflight: QueryInputResponse;
+    try {
+      postflight = await requestDaemonControl<QueryInputResponse>(
+        daemon,
+        `/v1/control/sessions/${sessionPath}/status`,
+      );
+    } catch (error) {
+      // The session resolved during preflight. If it can no longer be resolved
+      // now, its evidence snapshot changed underneath the running query (e.g. a
+      // concurrent reset removed or replaced it) — which is precisely a stale
+      // cursor rather than a missing session.
+      if (error instanceof DaemonControlError && error.code === "SESSION_NOT_FOUND") {
+        throw new QueryCursorStaleError();
+      }
+      throw error;
+    }
     if (postflight.session.evidenceEpoch !== input.session.evidenceEpoch) {
       throw new QueryCursorStaleError();
     }
