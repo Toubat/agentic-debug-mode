@@ -26,6 +26,7 @@
 ### Task 1: Replace workspace/run domain contracts with session/reset contracts
 
 **Files:**
+
 - Modify: `src/domain/session.ts`
 - Modify: `src/domain/event.ts`
 - Modify: `src/domain/diagnostic.ts`
@@ -36,6 +37,7 @@
 - Create: `tests/contract/session-model.test.ts`
 
 **Interfaces:**
+
 - Produces:
 
 ```typescript
@@ -131,6 +133,7 @@ git push -u origin HEAD
 ### Task 2: Implement session creation, reset, listing, and deletion persistence
 
 **Files:**
+
 - Modify: `src/daemon/session-registry.ts`
 - Modify: `src/daemon/event-store.ts`
 - Modify: `src/daemon/diagnostic-store.ts`
@@ -144,6 +147,7 @@ git push -u origin HEAD
 - Modify: `tests/unit/persistence/event-store.test.ts`
 
 **Interfaces:**
+
 - Consumes: `Session`, `ProbeEvent`, and `NormalizedEvent` from Task 1.
 - Produces:
 
@@ -249,6 +253,7 @@ git push
 ### Task 3: Replace the custom parser with Commander.js and the new command surface
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `bun.lock`
 - Create: `src/cli/program.ts`
@@ -261,6 +266,7 @@ git push
 - Create: `tests/contract/help.test.ts`
 
 **Interfaces:**
+
 - Produces:
 
 ```typescript
@@ -270,8 +276,23 @@ export interface CliInvocation {
     | { kind: "create" }
     | { kind: "template"; language: string; ingest: "http" | "file" }
     | { kind: "reset"; sessionId: string }
-    | { kind: "logs"; sessionId: string; hypotheses: string[]; offset: number; limit: number; snapshot?: string }
-    | { kind: "query"; sessionId: string; program?: string; cursor?: string; slurp: boolean; limit: number; timeoutMs: number }
+    | {
+        kind: "logs";
+        sessionId: string;
+        hypotheses: string[];
+        offset: number;
+        limit: number;
+        snapshot?: string;
+      }
+    | {
+        kind: "query";
+        sessionId: string;
+        program?: string;
+        cursor?: string;
+        slurp: boolean;
+        limit: number;
+        timeoutMs: number;
+      }
     | { kind: "status"; sessionId: string }
     | { kind: "sessions"; all: boolean }
     | { kind: "clean"; sessionId: string }
@@ -365,6 +386,7 @@ git push
 ### Task 4: Implement create/reset/clean/sessions/stop APIs and commands
 
 **Files:**
+
 - Create: `src/commands/create.ts`
 - Create: `src/commands/reset.ts`
 - Rewrite: `src/commands/sessions.ts`
@@ -380,6 +402,7 @@ git push
 - Rewrite: `tests/e2e/cli-lifecycle.test.ts`
 
 **Interfaces:**
+
 - `create` response data:
 
 ```typescript
@@ -470,6 +493,7 @@ git push
 ### Task 5: Replace ingestion routing and event normalization
 
 **Files:**
+
 - Modify: `src/daemon/ingest-api.ts`
 - Modify: `src/daemon/direct-append-observer.ts`
 - Modify: `src/domain/event-validation.ts`
@@ -481,6 +505,7 @@ git push
 - Modify: `tests/integration/ingestion/mixed-stress.test.ts`
 
 **Interfaces:**
+
 - HTTP route: `POST /ingest/:sessionId`.
 - Probe body: `{ hypothesisId, location, message, data, timestamp }`.
 - Stored body: probe fields plus `{ id, sequence, receivedAt }`.
@@ -552,6 +577,7 @@ git push
 ### Task 6: Make logs/query/status session-only, bounded, and reset-safe
 
 **Files:**
+
 - Modify: `src/commands/logs.ts`
 - Modify: `src/commands/query.ts`
 - Modify: `src/commands/status.ts`
@@ -565,6 +591,7 @@ git push
 - Create: `tests/e2e/unknown-session.test.ts`
 
 **Interfaces:**
+
 - All scope types contain only `sessionId` and optional hypothesis filters.
 - Cursor payloads contain `sessionId`, `evidenceEpoch`, snapshot watermark, page position, and
   complete query options.
@@ -661,6 +688,7 @@ git push
 ### Task 7: Add idle shutdown without exposing service management
 
 **Files:**
+
 - Create: `src/daemon/activity.ts`
 - Modify: `src/daemon/server.ts`
 - Modify: `src/daemon/main.ts`
@@ -745,6 +773,7 @@ git push
 ### Task 8: Implement session-independent templates and nine live-tested languages
 
 **Files:**
+
 - Rewrite: `src/probes/render.ts`
 - Rewrite: `src/probes/javascript.ts`
 - Rewrite: `src/probes/typescript.ts`
@@ -877,19 +906,26 @@ git push
 ### Task 9: Rewrite pretty output, Agent Skill, and ground-truth documentation
 
 **Files:**
+
 - Modify: `src/cli/pretty-renderer.ts`
 - Modify: `src/cli/output-schema.ts`
 - Rewrite: `skills/agentic-debug-mode/SKILL.md`
+- Create: `skills/agentic-debug-mode/REFERENCE.md`
+- Create: `skills/agentic-debug-mode/EXAMPLES.md`
 - Rewrite: `docs/building-a-debug-mode-agent.md`
 - Modify: `README.md`
 - Modify: `tests/contract/result-rendering.test.ts`
 - Rewrite: `tests/skill/skill-contract.test.ts`
 
 **Interfaces:**
+
 - Pretty `template` sections: helper, call, placeholders, event schema.
 - Pretty evidence order: warnings, session scope, statistics, records/results, actionable hints.
 - Skill commands: create, template, reset, logs, query, status, sessions when recovering an ID,
   clean only on explicit deletion request, and stop at completion.
+- `SKILL.md` is a complete operational workflow, not a short command list. Keep it below 500 lines
+  and move the exhaustive command/query/language reference and worked examples into the two linked,
+  one-level-deep supporting files.
 
 - [ ] **Step 1: Write failing pretty and skill contracts**
 
@@ -935,6 +971,12 @@ for (const command of [
 }
 ```
 
+Before rewriting, run fresh-agent pressure scenarios against the current skill and record concrete
+failures. Cover: missing CLI installation, multiple sessions, large evidence that tempts direct
+file reads, a reproduction the agent can execute itself, an inaccessible device interaction,
+malformed records, and post-fix verification/removal of observations. The current skill must fail
+at least one retrieval or application scenario before editing begins.
+
 - [ ] **Step 2: Run rendering and skill contracts**
 
 Run: `bun test tests/contract/result-rendering.test.ts tests/skill/skill-contract.test.ts`
@@ -952,6 +994,39 @@ Run available CLI commands, tests, and HTTP requests yourself.
 
 It includes the exact five-field probe schema and states that `timestamp` and `receivedAt` are Unix
 epoch milliseconds.
+
+Completely replace the current skill. The new skill must be at least as operationally complete as
+`DESIGN.md` while hiding service internals. It must include:
+
+- precise trigger conditions in frontmatter, beginning with `Use when...`;
+- definitions of session, hypothesis label, helper template, call template, ingest URL, append
+  path, observation, reset cycle, and runtime evidence before first use;
+- self-installation when `debug-mode` is missing, with npm/npx and Homebrew paths, without asking
+  the user to run commands the agent can run;
+- the complete create → template → insert folded observation regions → reset → reproduce → inspect
+  logs/query/status → classify hypotheses → change code → reset/reproduce → compare evidence →
+  remove observations → stop workflow;
+- explicit rules for reusing one session, requiring `--session` every time, and using `sessions`
+  only to recover a lost ID rather than auto-selecting;
+- transport selection and the exact advertised JavaScript, TypeScript, Python, Go, Ruby, PHP,
+  PowerShell, C#, and Swift combinations;
+- exact placeholder replacement, five-field event schema, timestamp units, region markers, bounded
+  data guidance, secret handling, and transport-failure isolation;
+- how to interpret warnings/statistics, inspect all malformed records with `status`, page with
+  complete hints, and use jaq/query cursors instead of reading canonical evidence files directly;
+- concrete query examples for filters, nested data, regexes, projections, sorting, grouping, and
+  aggregation, with `--slurp` explained;
+- the autonomy boundary: execute every accessible prerequisite and reproduction action; ask only
+  for inaccessible UI/device/account interactions or subjective confirmation;
+- proof requirements for baseline and post-fix evidence, plus the rule that observations remain
+  until post-fix evidence succeeds;
+- cleanup distinctions: `reset` reuses a session, `clean` permanently deletes it only when intended,
+  and `stop` ends the hidden service without deleting evidence;
+- common mistakes and a compact quick-reference section.
+
+Normal Agent workflow must never use `--json`; reserve it for external integrations in
+`REFERENCE.md`. Do not mention implementation processes, ports, locks, PIDs, internal state files,
+or internal JSON response paths.
 
 For `logs`, render every event's full `data` value and every observed hypothesis ID without
 repeating invariant scope fields in each row. For `query`, render homogeneous scalar/object results
@@ -975,6 +1050,12 @@ rg 'debug-mode (start|probe|clear|daemon stop)|--workspace|--run-id|data\\.instr
 Expected: tests pass; ripgrep returns only explicit removed-interface migration notes in
 `DESIGN.md`.
 
+Run the same fresh-agent pressure scenarios with the rewritten skill. Agents must now install the
+CLI themselves, preserve explicit session scope, avoid direct evidence-file reads, execute
+accessible reproductions, ask only for genuinely inaccessible actions, diagnose malformed input,
+and retain observations through post-fix verification. Record the before/after behavior in the task
+report.
+
 - [ ] **Step 6: Commit and push**
 
 ```bash
@@ -986,6 +1067,7 @@ git push
 ### Task 10: Harden release workflow and complete end-to-end verification
 
 **Files:**
+
 - Modify: `.github/workflows/release.yml`
 - Modify: `packaging/homebrew/agentic-debug-mode.rb`
 - Modify: `tests/distribution/package-layout.test.ts`
@@ -997,6 +1079,7 @@ git push
   - `src/probes/render.ts`
 
 **Interfaces:**
+
 - Build jobs: `contents: read`, no OIDC.
 - Publish job: `contents: write`, `id-token: write`.
 - Root, launcher, platform-package, tag, and rendered Homebrew versions must match.
@@ -1005,7 +1088,9 @@ git push
 
 ```typescript
 expect(release).toContain("build:\n    permissions:\n      contents: read");
-expect(release).toContain("publish:\n    permissions:\n      contents: write\n      id-token: write");
+expect(release).toContain(
+  "publish:\n    permissions:\n      contents: write\n      id-token: write",
+);
 expect(release).toContain("require('./package.json').version");
 expect(release).toContain("checksums.txt");
 expect(release).toContain("agentic-debug-mode.spdx.json");
