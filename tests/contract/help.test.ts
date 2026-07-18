@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseCli } from "../../src/cli/program";
+
+// program.ts reports packageJson.version live, so the expected value must track
+// the root package version rather than a hardcoded string that breaks on release bumps.
+const rootVersion = (
+  JSON.parse(await readFile(join(import.meta.dir, "..", "..", "package.json"), "utf8")) as {
+    version: string;
+  }
+).version;
 
 async function expectExitTwo(argv: string[]): Promise<void> {
   await expect(parseCli(argv)).rejects.toMatchObject({ exitCode: 2 });
@@ -60,7 +69,7 @@ describe("Commander CLI help and errors", () => {
   });
 
   test("--version returns package version text", async () => {
-    await expect(parseCli(["--version"])).resolves.toEqual({ helpText: "0.1.0\n" });
+    await expect(parseCli(["--version"])).resolves.toEqual({ helpText: `${rootVersion}\n` });
   });
 
   test("rejects unknown commands and missing required options", async () => {

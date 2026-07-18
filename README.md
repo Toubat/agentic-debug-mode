@@ -113,3 +113,25 @@ tests, then runs language and standalone-distribution suites independently.
 The full architecture and contracts are documented in
 [`specs/building-a-debug-mode-agent.md`](specs/building-a-debug-mode-agent.md).
 
+## Releasing
+
+Releases are automated with [Changesets](https://github.com/changesets/changesets):
+
+1. Alongside a change, record the intended version bump:
+
+   ```bash
+   bun changeset
+   ```
+
+   Choose `patch`, `minor`, or `major`, write a one-line summary, and commit the generated file in
+   `.changeset/`.
+
+2. When the change lands on `main`, the `Changesets` workflow opens (or updates) a **Version
+   Packages** pull request that consumes the pending changesets, bumps the root version, and — via
+   the `version` script — propagates that version into the npm launcher and platform packages.
+
+3. Merging the Version Packages PR tags the release (`vX.Y.Z`) and dispatches the `Release`
+   workflow, which builds the native binaries and publishes the npm packages and Homebrew formula.
+
+No manual tagging or extra secrets are required.
+

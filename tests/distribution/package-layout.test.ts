@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..", "..");
+const rootManifestPromise = readFile(join(root, "package.json"), "utf8").then(
+  (contents) => JSON.parse(contents) as { version: string },
+);
 const launcherDirectory = join(root, "packages", "npm-launcher");
 const platformsDirectory = join(root, "packages", "platform-binaries");
 const targets = ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "win32-x64"] as const;
@@ -23,8 +26,11 @@ async function manifest(path: string): Promise<PackageManifest> {
 describe("npm distribution layout", () => {
   test("launcher selects every supported optional binary package", async () => {
     const launcher = await manifest(join(launcherDirectory, "package.json"));
+    const rootVersion = (await rootManifestPromise).version;
 
     expect(launcher.name).toBe("agentic-debug-mode");
+    // The version script keeps the launcher in lockstep with the root package.
+    expect(launcher.version).toBe(rootVersion);
     expect(launcher.bin).toEqual({ "debug-mode": "bin/debug-mode.js" });
     expect(Object.keys(launcher.optionalDependencies ?? {}).sort()).toEqual(
       targets.map((target) => `@agentic-debug-mode/cli-${target}`).sort(),
@@ -35,6 +41,7 @@ describe("npm distribution layout", () => {
   });
 
   test("platform packages constrain installation to their target", async () => {
+    const rootVersion = (await rootManifestPromise).version;
     for (const target of targets) {
       const platform = target.split("-")[0] ?? "";
       const architecture = target.split("-")[1] ?? "";
@@ -43,7 +50,8 @@ describe("npm distribution layout", () => {
       expect(packageJson.name).toBe(`@agentic-debug-mode/cli-${target}`);
       expect(packageJson.os).toEqual([platform]);
       expect(packageJson.cpu).toEqual([architecture]);
-      expect(packageJson.version).toBe("0.1.0");
+      // The version script keeps every platform package in lockstep with the root package.
+      expect(packageJson.version).toBe(rootVersion);
     }
   });
 });
