@@ -48,13 +48,50 @@ describe("session-independent template renderers", () => {
         [target, ...callPlaceholders].sort(),
       );
       expect(`${template.helperTemplate}\n${template.callTemplate}`).not.toMatch(
-        /sessionId|runId|schemaVersion|capability|token/i,
+        /sessionId|runId|schemaVersion|capability/i,
       );
       expect(template.helperTemplate).toContain("agent log");
       expect(template.callTemplate).toContain("agent log");
       expect(template.helperTemplate).toMatch(/65_?536|65536|64 \* 1024/);
+      expect(template.helperTemplate).toContain("[REDACTED]");
+      for (const sensitiveKey of [
+        "password",
+        "secret",
+        "token",
+        "api_key",
+        "authorization",
+        "cookie",
+        "private_key",
+        "access_token",
+        "refresh_token",
+        "client_secret",
+        "credentials",
+      ]) {
+        expect(template.helperTemplate.toLowerCase()).toContain(sensitiveKey);
+      }
     });
   }
+
+  test("HTTP helpers clean up every fulfilled response body", () => {
+    for (const language of ["javascript", "typescript"]) {
+      const helper = renderTemplate(language, "http").helperTemplate;
+      expect(helper).toContain(".body");
+      expect(helper).toContain(".cancel()");
+      expect(helper).toMatch(/\.then\(/);
+      expect(helper).toMatch(/\.catch\(/);
+    }
+  });
+
+  test("Swift uses one POSIX append write without seek APIs", () => {
+    const helper = renderTemplate("swift", "file").helperTemplate;
+    expect(helper).toContain("import Darwin");
+    expect(helper).toContain("import Glibc");
+    expect(helper).toContain("O_APPEND");
+    expect(helper).toContain("O_CREAT");
+    expect(helper).toContain("0o600");
+    expect(helper).toContain("write(");
+    expect(helper).not.toMatch(/seek|FileHandle/);
+  });
 
   test("normalizes documented aliases and casing", () => {
     expect(renderTemplate("JS", "HTTP").language).toBe("javascript");
