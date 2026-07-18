@@ -22,7 +22,7 @@ interface IncomingCursor {
 export interface DirectAppendObserverHooks {
   afterDiagnosticAppend?(): Promise<void>;
   afterEventAppend?(): Promise<void>;
-  onRecordProcessed?(): void;
+  onCompleteRecordObserved?(): void;
 }
 
 interface OversizedRecordScan {
@@ -109,12 +109,12 @@ export class DirectAppendObserver {
         if (available > MAX_INGESTION_RECORD_BYTES) {
           const scan = await this.scanOversizedRecord(incoming, offset, stats.size);
           if (scan) {
+            this.hooks.onCompleteRecordObserved?.();
             const result = await this.ingestion.ingestOversizedRecord(sessionId, {
               actualByteLength: scan.actualByteLength,
               diagnosticId: directAppendDiagnosticId(sessionId, offset, scan.contentHash),
               previewByteLength: scan.previewByteLength,
             });
-            this.hooks.onRecordProcessed?.();
             if (result === "not-found") {
               return;
             }
@@ -136,6 +136,7 @@ export class DirectAppendObserver {
           const sourceOffset = offset + relativeOffset;
           const contentHash = directSourceContentHash(line);
           const diagnosticId = directAppendDiagnosticId(sessionId, sourceOffset, contentHash);
+          this.hooks.onCompleteRecordObserved?.();
           const result =
             line.byteLength > MAX_INGESTION_RECORD_BYTES
               ? await this.ingestion.ingestOversizedRecord(sessionId, {
@@ -149,7 +150,6 @@ export class DirectAppendObserver {
                   eventId: directAppendEventId(sessionId, sourceOffset, contentHash),
                   previewByteLength: Math.min(line.byteLength, MAX_MALFORMED_PREVIEW_BYTES),
                 });
-          this.hooks.onRecordProcessed?.();
           switch (result) {
             case "accepted":
               await this.hooks.afterEventAppend?.();

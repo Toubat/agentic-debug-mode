@@ -1,5 +1,5 @@
 import { requestDaemonControl } from "../cli/daemon-client";
-import { ensureDaemon } from "../cli/daemon-manager";
+import { type EnsureDaemonFunction, ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput, Warning } from "../cli/output-schema";
 import { sessionPathSegment } from "../cli/session-path";
 import type { EvidenceDiagnostic } from "../domain/diagnostic";
@@ -12,10 +12,13 @@ interface StatusResponse {
   session: Session;
 }
 
-export async function statusCommand(sessionId: string): Promise<CommandOutput> {
+export async function statusCommand(
+  sessionId: string,
+  ensure: EnsureDaemonFunction = ensureDaemon,
+): Promise<CommandOutput> {
   try {
     const sessionPath = sessionPathSegment(sessionId);
-    const daemon = await ensureDaemon({
+    const daemon = await ensure({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
     const response = await requestDaemonControl<StatusResponse>(

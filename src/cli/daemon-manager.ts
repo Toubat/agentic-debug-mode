@@ -19,11 +19,34 @@ import {
 import { inspectProcess, terminateIfIdentityMatches } from "../native/system";
 import { readDaemonHealth, requestDaemonShutdown } from "./daemon-client";
 
-export interface EnsureDaemonOptions {
-  homeDirectory?: string;
+export interface DaemonManagerClock {
+  now(): number;
+  sleep(milliseconds: number): Promise<void>;
 }
 
+export interface SpawnedDaemon {
+  hasExited(): boolean;
+  retire(): Promise<void>;
+}
+
+export interface EnsureDaemonOptions {
+  homeDirectory?: string;
+  testHooks?: {
+    clock?: DaemonManagerClock;
+    command?: string[];
+    launchDaemon?(nonce: string, homeDirectory?: string): Promise<SpawnedDaemon>;
+    startupTimeoutMilliseconds?: number;
+  };
+}
+
+export type EnsureDaemonFunction = (options?: EnsureDaemonOptions) => Promise<DaemonConnection>;
+
 export class DaemonVersionIncompatibleError extends Error {}
+
+const systemManagerClock: DaemonManagerClock = {
+  now: () => Date.now(),
+  sleep: (milliseconds) => Bun.sleep(milliseconds),
+};
 
 function isCompatible(metadata: DaemonMetadata): boolean {
   return (
@@ -64,14 +87,15 @@ function daemonCommand(): string[] {
   return [process.execPath, "__daemon"];
 }
 
-interface SpawnedDaemon {
-  hasExited(): boolean;
-}
-
 class DaemonChildExitedError extends Error {}
 
-function spawnDaemon(nonce: string, homeDirectory?: string): SpawnedDaemon {
-  const child = Bun.spawn([...daemonCommand(), "--nonce", nonce], {
+function spawnDaemon(
+  nonce: string,
+  homeDirectory?: string,
+  command = daemonCommand(),
+  clock: DaemonManagerClock = systemManagerClock,
+): SpawnedDaemon {
+  const child = Bun.spawn([...command, "--nonce", nonce], {
     env: {
       ...process.env,
       AGENT_DEBUG_MODE_HOME_OVERRIDE: homeDirectory,
@@ -81,11 +105,31 @@ function spawnDaemon(nonce: string, homeDirectory?: string): SpawnedDaemon {
     stdout: "ignore",
     windowsHide: true,
   });
+  const initial = inspectProcess(child.pid);
+  const identity =
+    initial.exists && !initial.zombie && initial.executable && initial.startTime !== undefined
+      ? { executable: initial.executable, startTime: initial.startTime }
+      : undefined;
   child.unref();
   return {
     hasExited: () => {
       const process = inspectProcess(child.pid);
       return !process.exists || process.zombie;
+    },
+    retire: async () => {
+      if (!identity) {
+        return;
+      }
+      terminateIfIdentityMatches(child.pid, JSON.stringify(identity));
+      const gracefulDeadline = clock.now() + 1_000;
+      while (clock.now() < gracefulDeadline) {
+        const current = inspectProcess(child.pid);
+        if (!current.exists || current.zombie) {
+          return;
+        }
+        await clock.sleep(20);
+      }
+      terminateIfIdentityMatches(child.pid, JSON.stringify(identity), true);
     },
   };
 }
@@ -95,11 +139,13 @@ async function awaitReadyCandidate(
   nonce: string,
   controlToken: string,
   spawned: SpawnedDaemon,
+  timeoutMilliseconds = 10_000,
+  clock: DaemonManagerClock = systemManagerClock,
 ): Promise<DaemonConnection> {
-  const deadline = Date.now() + 10_000;
+  const deadline = clock.now() + timeoutMilliseconds;
   let candidateSeen = false;
   let healthSeen = false;
-  while (Date.now() < deadline) {
+  while (clock.now() < deadline) {
     const candidate = await readReadyCandidate(stateRoot, nonce);
     if (candidate) {
       candidateSeen = true;
@@ -115,7 +161,7 @@ async function awaitReadyCandidate(
     if (spawned.hasExited()) {
       throw new DaemonChildExitedError("Daemon child exited before publishing a ready candidate");
     }
-    await Bun.sleep(20);
+    await clock.sleep(20);
   }
   throw new Error(
     `Daemon failed to become ready before the startup deadline (candidateSeen=${candidateSeen}, healthSeen=${healthSeen})`,
@@ -141,7 +187,11 @@ async function tryAdoptReadyCandidate(
   return { ...health, controlToken };
 }
 
-async function retireVerifiedStaleProcess(stateRoot: string, controlToken: string): Promise<void> {
+async function retireVerifiedStaleProcess(
+  stateRoot: string,
+  controlToken: string,
+  clock: DaemonManagerClock,
+): Promise<void> {
   const state = await readDaemonState(stateRoot);
   if (!state) {
     return;
@@ -153,7 +203,9 @@ async function retireVerifiedStaleProcess(stateRoot: string, controlToken: strin
       return;
     }
     if ((health.activeSessions ?? 0) > 0) {
-      throw new Error("An incompatible daemon has active sessions and cannot be replaced");
+      throw new DaemonVersionIncompatibleError(
+        "An incompatible daemon has active sessions and cannot be replaced",
+      );
     }
     await requestDaemonShutdown(connection);
     return;
@@ -173,26 +225,26 @@ async function retireVerifiedStaleProcess(stateRoot: string, controlToken: strin
     return;
   }
 
-  const deadline = Date.now() + 2_000;
-  while (Date.now() < deadline) {
+  const deadline = clock.now() + 2_000;
+  while (clock.now() < deadline) {
     const current = inspectProcess(state.pid);
     if (!current.exists || current.zombie) {
       return;
     }
-    await Bun.sleep(20);
+    await clock.sleep(20);
   }
 
   const forced = terminateIfIdentityMatches(state.pid, JSON.stringify(state.processIdentity), true);
   if (!forced.terminated) {
     return;
   }
-  const forcedDeadline = Date.now() + 2_000;
-  while (Date.now() < forcedDeadline) {
+  const forcedDeadline = clock.now() + 2_000;
+  while (clock.now() < forcedDeadline) {
     const current = inspectProcess(state.pid);
     if (!current.exists || current.zombie) {
       return;
     }
-    await Bun.sleep(20);
+    await clock.sleep(20);
   }
   throw new Error("Verified stale daemon did not terminate after a forced signal");
 }
@@ -203,10 +255,11 @@ async function ensureDaemonOnce(
   persistence: Persistence,
   options: EnsureDaemonOptions,
 ): Promise<DaemonConnection> {
+  const clock = options.testHooks?.clock ?? systemManagerClock;
   const controlToken = await getOrCreateControlToken(persistence.stateRoot);
-  const deadline = Date.now() + 15_000;
+  const deadline = clock.now() + 15_000;
 
-  while (Date.now() < deadline) {
+  while (clock.now() < deadline) {
     const reusable = await readReusableConnection(persistence.stateRoot, controlToken);
     if (reusable) {
       return reusable;
@@ -221,30 +274,25 @@ async function ensureDaemonOnce(
     if (!lock) {
       const owner = await StartupLock.readOwner(persistence.stateRoot);
       if (owner) {
-        const adopted = await tryAdoptReadyCandidate(
-          persistence.stateRoot,
-          owner.nonce,
-          controlToken,
-        );
-        if (adopted) {
-          if (owner.deadline < Date.now()) {
-            const process = inspectProcess(owner.pid);
-            if (!process.exists || process.zombie) {
-              await StartupLock.breakIfOwnedBy(persistence.stateRoot, owner);
-            }
+        const ownerProcess = inspectProcess(owner.pid);
+        if (!ownerProcess.exists || ownerProcess.zombie) {
+          const adopted = await tryAdoptReadyCandidate(
+            persistence.stateRoot,
+            owner.nonce,
+            controlToken,
+          );
+          if (adopted) {
+            await StartupLock.breakIfOwnedBy(persistence.stateRoot, owner);
+            return adopted;
           }
-          return adopted;
-        }
-      }
-      if (owner && owner.deadline < Date.now()) {
-        const process = inspectProcess(owner.pid);
-        if (!process.exists || process.zombie) {
-          await StartupLock.breakIfOwnedBy(persistence.stateRoot, owner);
+          if (owner.deadline < clock.now()) {
+            await StartupLock.breakIfOwnedBy(persistence.stateRoot, owner);
+          }
         }
       } else if (!owner) {
         await StartupLock.breakIfUnownedAndOlderThan(persistence.stateRoot, 250);
       }
-      await Bun.sleep(20);
+      await clock.sleep(20);
       continue;
     }
 
@@ -253,25 +301,35 @@ async function ensureDaemonOnce(
       if (rechecked) {
         return rechecked;
       }
-      await retireVerifiedStaleProcess(persistence.stateRoot, controlToken);
+      await retireVerifiedStaleProcess(persistence.stateRoot, controlToken, clock);
       let lastStartupError: unknown;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         let spawned: SpawnedDaemon;
         try {
-          spawned = spawnDaemon(nonce, options.homeDirectory);
+          spawned = options.testHooks?.launchDaemon
+            ? await options.testHooks.launchDaemon(nonce, options.homeDirectory)
+            : spawnDaemon(nonce, options.homeDirectory, options.testHooks?.command, clock);
         } catch (error) {
           lastStartupError = error;
-          await Bun.sleep(25 * (attempt + 1));
+          await clock.sleep(25 * (attempt + 1));
           continue;
         }
         try {
-          return await awaitReadyCandidate(persistence.stateRoot, nonce, controlToken, spawned);
+          return await awaitReadyCandidate(
+            persistence.stateRoot,
+            nonce,
+            controlToken,
+            spawned,
+            options.testHooks?.startupTimeoutMilliseconds,
+            clock,
+          );
         } catch (error) {
+          await spawned.retire();
           if (!(error instanceof DaemonChildExitedError)) {
             throw error;
           }
           lastStartupError = error;
-          await Bun.sleep(25 * (attempt + 1));
+          await clock.sleep(25 * (attempt + 1));
         }
       }
       throw lastStartupError;

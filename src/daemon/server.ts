@@ -10,6 +10,7 @@ import {
   DAEMON_PROTOCOL_VERSION,
   DAEMON_SCHEMA_VERSION,
   type DaemonMetadata,
+  type DaemonProcessIdentity,
 } from "./protocol";
 import { parseRawIngestionTarget } from "./raw-request-target";
 import { createShutdownController } from "./shutdown";
@@ -147,6 +148,10 @@ export interface StartDaemonServerOptions {
   ingestApi: IngestApi;
   hooks?: DaemonServerHooks;
   nonce: string;
+  processMetadata?: {
+    pid: number;
+    processIdentity: DaemonProcessIdentity;
+  };
   stateRoot: string;
 }
 
@@ -304,10 +309,19 @@ export async function startDaemonServer(
     });
   });
 
-  const [processInspection, activeSessions] = await Promise.all([
-    Promise.resolve(inspectProcess(process.pid)),
-    options.getActiveSessionCount(),
-  ]);
+  const processMetadata =
+    options.processMetadata ??
+    (() => {
+      const processInspection = inspectProcess(process.pid);
+      return {
+        pid: process.pid,
+        processIdentity: {
+          executable: processInspection.executable,
+          startTime: processInspection.startTime,
+        },
+      };
+    })();
+  const activeSessions = await options.getActiveSessionCount();
   const address = server.address();
   if (!address || typeof address === "string") {
     server.closeAllConnections();
@@ -320,12 +334,9 @@ export async function startDaemonServer(
     binaryVersion: packageJson.version,
     host: DAEMON_HOST,
     nonce: options.nonce,
-    pid: process.pid,
+    pid: processMetadata.pid,
     port,
-    processIdentity: {
-      executable: processInspection.executable,
-      startTime: processInspection.startTime,
-    },
+    processIdentity: processMetadata.processIdentity,
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     schemaVersion: DAEMON_SCHEMA_VERSION,
     startedAt: clock.now(),

@@ -1,5 +1,5 @@
 import { requestDaemonControl } from "../cli/daemon-client";
-import { ensureDaemon } from "../cli/daemon-manager";
+import { type EnsureDaemonFunction, ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput, Hint, Warning } from "../cli/output-schema";
 import type { CliInvocation } from "../cli/program";
 import { sessionPathSegment } from "../cli/session-path";
@@ -64,13 +64,17 @@ function pageCommand(
   return parts.join(" ");
 }
 
-export async function logsCommand(options: LogsOptions, json: boolean): Promise<CommandOutput> {
+export async function logsCommand(
+  options: LogsOptions,
+  json: boolean,
+  ensure: EnsureDaemonFunction = ensureDaemon,
+): Promise<CommandOutput> {
   const startedAt = performance.now();
   const { hypotheses: hypothesisFilter, limit, offset, sessionId } = options;
 
   try {
     const sessionPath = sessionPathSegment(sessionId);
-    const daemon = await ensureDaemon({
+    const daemon = await ensure({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
     const requestedSnapshot = options.snapshot;

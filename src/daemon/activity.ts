@@ -93,7 +93,7 @@ export class ActivityTracker {
   }
 
   private clearTimer(): void {
-    if (!this.timer) {
+    if (this.timer === undefined) {
       return;
     }
     this.clock.clearTimeout(this.timer);

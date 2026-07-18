@@ -1,5 +1,5 @@
 import { requestDaemonControl } from "../cli/daemon-client";
-import { ensureDaemon } from "../cli/daemon-manager";
+import { type EnsureDaemonFunction, ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput } from "../cli/output-schema";
 import { commandError } from "./errors";
 
@@ -9,9 +9,11 @@ export interface SessionIngest {
   sessionId: string;
 }
 
-export async function createCommand(): Promise<CommandOutput> {
+export async function createCommand(
+  ensure: EnsureDaemonFunction = ensureDaemon,
+): Promise<CommandOutput> {
   try {
-    const daemon = await ensureDaemon({
+    const daemon = await ensure({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
     const created = await requestDaemonControl<SessionIngest>(daemon, "/v1/control/sessions", {

@@ -73,6 +73,24 @@ class FakeClock implements Clock {
   }
 }
 
+class ZeroHandleClock implements Clock {
+  readonly callbacks: Array<() => void> = [];
+  readonly cleared: Array<ReturnType<typeof setTimeout>> = [];
+
+  now(): number {
+    return 0;
+  }
+
+  setTimeout(callback: () => void): ReturnType<typeof setTimeout> {
+    this.callbacks.push(callback);
+    return 0 as unknown as ReturnType<typeof setTimeout>;
+  }
+
+  clearTimeout(handle: ReturnType<typeof setTimeout>): void {
+    this.cleared.push(handle);
+  }
+}
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -152,6 +170,20 @@ describe("daemon inactivity tracking", () => {
 
     expect(stops).toBe(0);
     expect(clock.scheduled).toHaveLength(1);
+  });
+
+  test("clears a timer whose clock handle is zero", () => {
+    const clock = new ZeroHandleClock();
+    const activity = new ActivityTracker(clock, () => undefined);
+
+    activity.touch();
+    const release = activity.acquireLease();
+    release();
+    activity.stop();
+
+    expect(clock.cleared).toHaveLength(3);
+    expect(clock.cleared.every((handle) => (handle as unknown as number) === 0)).toBe(true);
+    expect(clock.callbacks).toHaveLength(3);
   });
 });
 
@@ -294,7 +326,7 @@ describe("daemon server inactivity shutdown", () => {
 });
 
 describe("direct ingestion inactivity", () => {
-  test("touches once for every complete record outcome but not trailing bytes", async () => {
+  test("touches once for every complete record attempt but not trailing bytes", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-idle-direct-"));
     temporaryDirectories.push(home);
     const persistence = await Persistence.open(home);
@@ -306,7 +338,7 @@ describe("direct ingestion inactivity", () => {
     const ingestion = new IngestionService(sessions, events, diagnostics, sequence);
     let touches = 0;
     const observer = new DirectAppendObserver(persistence, sessions, ingestion, {
-      onRecordProcessed() {
+      onCompleteRecordObserved() {
         touches += 1;
       },
     });
@@ -338,5 +370,55 @@ describe("direct ingestion inactivity", () => {
       }
     ).tick();
     expect(touches).toBe(5);
+  });
+
+  test("touches before a complete record ingestion held across the idle deadline", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-idle-direct-held-"));
+    temporaryDirectories.push(home);
+    const persistence = await Persistence.open(home);
+    const sessions = new SessionRegistry(persistence);
+    const session = await sessions.create(0);
+    const clock = new FakeClock();
+    let stops = 0;
+    const activity = new ActivityTracker(clock, () => {
+      stops += 1;
+    });
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let rejectIngestion: ((error: Error) => void) | undefined;
+    const heldIngestion = new Promise<never>((_resolve, reject) => {
+      rejectIngestion = reject;
+    });
+    const ingestion = {
+      ingestRecord() {
+        markStarted?.();
+        return heldIngestion;
+      },
+    } as unknown as IngestionService;
+    const observer = new DirectAppendObserver(persistence, sessions, ingestion, {
+      onCompleteRecordObserved() {
+        activity.touch();
+      },
+    });
+    await appendFile(sessions.incomingPath(session.id), '{"complete":true}\n');
+
+    clock.advance(IDLE_TIMEOUT_MILLISECONDS - 1);
+    const tick = (
+      observer as unknown as {
+        tick(): Promise<void>;
+      }
+    ).tick();
+    await started;
+    clock.advance(1);
+
+    expect(stops).toBe(0);
+    rejectIngestion?.(new Error("held ingestion failed"));
+    await expect(tick).rejects.toThrow("held ingestion failed");
+    clock.advance(IDLE_TIMEOUT_MILLISECONDS - 2);
+    expect(stops).toBe(0);
+    clock.advance(1);
+    expect(stops).toBe(1);
   });
 });
