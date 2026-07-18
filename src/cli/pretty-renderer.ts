@@ -16,10 +16,18 @@ function renderScope(result: CommandResult): string | undefined {
   return parts.length > 0 ? parts.join("  •  ") : undefined;
 }
 
+function formatStatistic(value: CommandResult["statistics"][string]): string {
+  if (value !== null && typeof value === "object") {
+    const pairs = Object.entries(value).map(([name, count]) => `${name}=${count}`);
+    return pairs.length > 0 ? pairs.join(", ") : "(none)";
+  }
+  return String(value);
+}
+
 function renderStatistics(result: CommandResult): string[] {
   const entries = Object.entries(result.statistics);
   const width = Math.max(0, ...entries.map(([key]) => key.length));
-  return entries.map(([key, value]) => `${key.padEnd(width)}  ${String(value)}`);
+  return entries.map(([key, value]) => `${key.padEnd(width)}  ${formatStatistic(value)}`);
 }
 
 function renderValue(value: unknown, indentation = "  "): string[] {
@@ -47,7 +55,6 @@ interface LogRecord {
   location: string;
   message: string;
   receivedAt: number;
-  schemaVersion: number;
   sequence: number;
   timestamp: number;
 }
@@ -65,7 +72,6 @@ function isLogRecord(value: unknown): value is LogRecord {
     typeof record.hypothesisId === "string" &&
     typeof record.location === "string" &&
     typeof record.message === "string" &&
-    typeof record.schemaVersion === "number" &&
     "data" in record
   );
 }
@@ -99,12 +105,7 @@ function renderLogTable(records: LogRecord[]): string[] {
         index === row.length - 1 ? value : value.padEnd(widths[index] ?? value.length),
       )
       .join("  ");
-  const schemas = [...new Set(records.map((record) => record.schemaVersion))];
-  return [
-    `records  •  schemaVersion ${schemas.join(", ")}`,
-    renderRow(headers),
-    ...rows.map(renderRow),
-  ];
+  return ["records", renderRow(headers), ...rows.map(renderRow)];
 }
 
 function isScalar(value: unknown): boolean {

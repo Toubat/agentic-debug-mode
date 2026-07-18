@@ -111,5 +111,5 @@ Biome is the formatter and linter. `bun run test` serializes resource-sensitive 
 tests, then runs language and standalone-distribution suites independently.
 
 The full architecture and contracts are documented in
-[`docs/building-a-debug-mode-agent.md`](docs/building-a-debug-mode-agent.md).
+[`specs/building-a-debug-mode-agent.md`](specs/building-a-debug-mode-agent.md).
 

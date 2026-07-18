@@ -189,6 +189,25 @@ describe("command result rendering", () => {
     );
   });
 
+  test("object-valued statistics render readably instead of [object Object]", () => {
+    const result: CommandResult<{ records: string[] }> = {
+      command: "logs",
+      data: { records: ["evidence"] },
+      hints: [],
+      ok: true,
+      partial: false,
+      schemaVersion: 1,
+      scope: { hypothesisFilter: null, sessionId: "session-1" },
+      statistics: { recordsByHypothesis: { H1: 3, H2: 1 }, returnedRecords: 4 },
+      warnings: [],
+    };
+
+    const rendered = renderPretty(result);
+
+    expect(rendered).not.toContain("[object Object]");
+    expect(rendered).toContain("recordsByHypothesis  H1=3, H2=1");
+  });
+
   test("logs render complete normalized events in a compact table", () => {
     const result: CommandResult<{
       records: Array<Record<string, unknown>>;
@@ -203,9 +222,7 @@ describe("command result rendering", () => {
             location: "src/cart.ts:84",
             message: "Before discount",
             receivedAt: 1_784_310_000_456,
-            schemaVersion: 1,
             sequence: 1,
-            sessionId: "session-1",
             timestamp: 1_784_310_000_123,
           },
         ],
