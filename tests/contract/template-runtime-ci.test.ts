@@ -19,3 +19,11 @@ test("CI installs and requires every advertised template runtime", async () => {
     expect(workflow).toContain(required);
   }
 });
+
+test("CI builds the full distribution artifacts as a dedicated step", async () => {
+  const workflow = await readFile(join(root, ".github", "workflows", "ci.yml"), "utf8");
+
+  expect(workflow).toContain("name: Build");
+  expect(workflow).toContain("run: bun run build");
+  expect(workflow).not.toContain("run: bun run build:native");
+});
