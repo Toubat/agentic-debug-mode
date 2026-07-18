@@ -86,16 +86,25 @@ export class ControlApi {
       if (!session) {
         return Response.json({ code: "SESSION_NOT_FOUND" }, { status: 404 });
       }
-      const diagnostics = await this.diagnostics.read(session.id);
       if (evidenceMatch[2] === "status") {
-        const summary = await this.events.summarize(session.id);
-        return Response.json({
-          diagnostics,
-          eventCount: summary.eventCount,
-          session,
-          watermark: summary.watermark,
+        return this.events.runSessionOperation(session.id, async () => {
+          const currentSession = await this.sessions.get(session.id);
+          if (!currentSession) {
+            return Response.json({ code: "SESSION_NOT_FOUND" }, { status: 404 });
+          }
+          const [diagnostics, summary] = await Promise.all([
+            this.diagnostics.read(session.id),
+            this.events.summarize(session.id),
+          ]);
+          return Response.json({
+            diagnostics,
+            eventCount: summary.eventCount,
+            session: currentSession,
+            watermark: summary.watermark,
+          });
         });
       }
+      const diagnostics = await this.diagnostics.read(session.id);
       const url = new URL(request.url);
       const offset = Number(url.searchParams.get("offset") ?? "0");
       const limit = Number(url.searchParams.get("limit") ?? "100");

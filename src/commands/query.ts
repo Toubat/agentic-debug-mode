@@ -33,6 +33,14 @@ interface QueryInputResponse {
   watermark: number;
 }
 
+export interface QueryCommandTestHooks {
+  afterNative?: () => Promise<void> | void;
+  afterPreflight?: () => Promise<void> | void;
+  executeNative?: (
+    execute: () => PagedFileQueryResult,
+  ) => Promise<PagedFileQueryResult> | PagedFileQueryResult;
+}
+
 function queryWarnings(diagnostics: EvidenceDiagnostic[]): Warning[] {
   const malformed = diagnostics.filter(
     (item) => item.reason === "INVALID_JSON" || item.reason === "INVALID_SCHEMA",
@@ -78,7 +86,11 @@ function nextPageCommand(
   return parts.join(" ");
 }
 
-export async function queryCommand(options: QueryOptions, json: boolean): Promise<CommandOutput> {
+export async function queryCommand(
+  options: QueryOptions,
+  json: boolean,
+  testHooks: QueryCommandTestHooks = {},
+): Promise<CommandOutput> {
   const { cursor: requestedCursor, program: requestedProgram, sessionId } = options;
   if ((!requestedProgram && !requestedCursor) || (requestedProgram?.length ?? 0) > 4_096) {
     return {
@@ -132,6 +144,7 @@ export async function queryCommand(options: QueryOptions, json: boolean): Promis
       jsonRequested = cursor.json;
       continuation = cursor.continuation;
     }
+    await testHooks.afterPreflight?.();
     const persistence = await Persistence.open(process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE);
     const evidencePath = persistence.sessionFile(sessionId, "events.ndjson");
     let spoolId: string | undefined;
@@ -139,27 +152,27 @@ export async function queryCommand(options: QueryOptions, json: boolean): Promis
     if (slurp) {
       spoolId = continuation.kind === "spool" ? continuation.spoolId : randomUUID();
       spoolByteOffset = continuation.kind === "spool" ? continuation.byteOffset : 0;
-    }
-    let page: PagedFileQueryResult;
-    if (slurp) {
       await persistence.initializeQuerySpoolDirectory(sessionId);
-      spoolPath = persistence.querySpoolFile(sessionId, spoolId as string);
-      page = runJaqSlurpPage(
-        program,
-        evidencePath,
-        hypothesisFilter,
-        watermark,
-        spoolPath,
-        spoolByteOffset,
-        limit,
-        timeoutMilliseconds,
-      );
-    } else {
+      spoolPath = persistence.querySpoolFile(sessionId, spoolId);
+    }
+    const executeNative = (): PagedFileQueryResult => {
+      if (slurp) {
+        return runJaqSlurpPage(
+          program,
+          evidencePath,
+          hypothesisFilter,
+          watermark,
+          spoolPath as string,
+          spoolByteOffset,
+          limit,
+          timeoutMilliseconds,
+        );
+      }
       const streamContinuation =
         continuation.kind === "stream"
           ? continuation
           : { byteOffset: 0, kind: "stream" as const, outputOrdinal: 0 };
-      page = runJaqFilePage(
+      return runJaqFilePage(
         program,
         evidencePath,
         hypothesisFilter,
@@ -169,6 +182,29 @@ export async function queryCommand(options: QueryOptions, json: boolean): Promis
         limit,
         timeoutMilliseconds,
       );
+    };
+    let page: PagedFileQueryResult | undefined;
+    let nativeError: unknown;
+    try {
+      page = testHooks.executeNative
+        ? await testHooks.executeNative(executeNative)
+        : executeNative();
+    } catch (error) {
+      nativeError = error;
+    }
+    await testHooks.afterNative?.();
+    const postflight = await requestDaemonControl<QueryInputResponse>(
+      daemon,
+      `/v1/control/sessions/${sessionPath}/status`,
+    );
+    if (postflight.session.evidenceEpoch !== input.session.evidenceEpoch) {
+      throw new QueryCursorStaleError();
+    }
+    if (nativeError !== undefined) {
+      throw nativeError;
+    }
+    if (!page) {
+      throw new Error("Native query returned no page.");
     }
     const rows = page.results;
     const warnings = queryWarnings(input.diagnostics);
@@ -267,7 +303,9 @@ export async function queryCommand(options: QueryOptions, json: boolean): Promis
   } catch (error) {
     if (
       spoolPath &&
-      (error instanceof EvidenceMalformedError || error instanceof QueryTimeoutError)
+      (error instanceof EvidenceMalformedError ||
+        error instanceof QueryCursorStaleError ||
+        error instanceof QueryTimeoutError)
     ) {
       await rm(spoolPath, { force: true });
     }

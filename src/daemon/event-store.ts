@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, type ReadStream } from "node:fs";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { finished } from "node:stream/promises";
@@ -36,6 +36,13 @@ export class EvidenceEpochMismatchError extends Error {
 
 export interface EventStoreOptions {
   sortChunkSize?: number;
+  sortedReaderHooks?: SortedReaderHooks;
+}
+
+export interface SortedReaderHooks {
+  failOpenAt?: number;
+  onClose?: () => void;
+  onOpen?: () => void;
 }
 
 export interface EventSummary {
@@ -55,16 +62,23 @@ function compareEvents(left: NormalizedEvent, right: NormalizedEvent): number {
 }
 
 class SortedEventReader {
+  private closePromise: Promise<void> | undefined;
   private readonly lines;
   private readonly iterator;
+  private readonly stream: ReadStream;
   current: NormalizedEvent | undefined;
 
-  constructor(path: string) {
+  constructor(
+    path: string,
+    private readonly hooks?: SortedReaderHooks,
+  ) {
+    this.stream = createReadStream(path, { encoding: "utf8" });
     this.lines = createInterface({
       crlfDelay: Number.POSITIVE_INFINITY,
-      input: createReadStream(path, { encoding: "utf8" }),
+      input: this.stream,
     });
     this.iterator = this.lines[Symbol.asyncIterator]();
+    this.hooks?.onOpen?.();
   }
 
   async advance(): Promise<void> {
@@ -72,8 +86,16 @@ class SortedEventReader {
     this.current = next.done ? undefined : (JSON.parse(next.value) as NormalizedEvent);
   }
 
-  close(): void {
-    this.lines.close();
+  async close(): Promise<void> {
+    if (!this.closePromise) {
+      this.closePromise = (async () => {
+        this.lines.close();
+        this.stream.destroy();
+        await finished(this.stream).catch(() => undefined);
+        this.hooks?.onClose?.();
+      })();
+    }
+    await this.closePromise;
   }
 }
 
@@ -93,12 +115,14 @@ function nextReader(readers: SortedEventReader[]): SortedEventReader | undefined
 export class EventStore {
   private readonly knownIds = new Map<string, Set<string>>();
   private readonly sortChunkSize: number;
+  private readonly sortedReaderHooks: SortedReaderHooks | undefined;
 
   constructor(
     private readonly persistence: Persistence,
     options: EventStoreOptions = {},
   ) {
     this.sortChunkSize = options.sortChunkSize ?? DEFAULT_SORT_CHUNK_SIZE;
+    this.sortedReaderHooks = options.sortedReaderHooks;
     if (!Number.isSafeInteger(this.sortChunkSize) || this.sortChunkSize < 1) {
       throw new Error("Event sort chunk size must be a positive safe integer");
     }
@@ -188,9 +212,21 @@ export class EventStore {
   }
 
   private async openSortedReaders(paths: string[]): Promise<SortedEventReader[]> {
-    const readers = paths.map((path) => new SortedEventReader(path));
-    await Promise.all(readers.map((reader) => reader.advance()));
-    return readers;
+    const readers: SortedEventReader[] = [];
+    try {
+      for (const [index, path] of paths.entries()) {
+        if (this.sortedReaderHooks?.failOpenAt === index) {
+          throw new Error("Injected sorted reader open failure");
+        }
+        const reader = new SortedEventReader(path, this.sortedReaderHooks);
+        readers.push(reader);
+        await reader.advance();
+      }
+      return readers;
+    } catch (error) {
+      await Promise.all(readers.map((reader) => reader.close()));
+      throw error;
+    }
   }
 
   private async mergeSortedFiles(inputPaths: string[], outputPath: string): Promise<void> {
@@ -214,9 +250,7 @@ export class EventStore {
       output.end();
       await finished(output);
     } finally {
-      for (const reader of readers) {
-        reader.close();
-      }
+      await Promise.all(readers.map((reader) => reader.close()));
       if (!output.closed) {
         output.destroy();
       }
@@ -245,9 +279,7 @@ export class EventStore {
       }
       return records;
     } finally {
-      for (const reader of readers) {
-        reader.close();
-      }
+      await Promise.all(readers.map((reader) => reader.close()));
     }
   }
 

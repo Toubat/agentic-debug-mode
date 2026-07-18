@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { requestDaemonShutdown } from "../../src/cli/daemon-client";
+import { requestDaemonControl, requestDaemonShutdown } from "../../src/cli/daemon-client";
 import { ensureDaemon } from "../../src/cli/daemon-manager";
 import type { CommandResult } from "../../src/cli/output-schema";
 import { parseCli } from "../../src/cli/program";
@@ -36,6 +36,73 @@ async function runCli(home: string, args: string[]) {
 }
 
 describe("jaq query command", () => {
+  for (const phase of ["after-preflight", "during-native", "after-native"] as const) {
+    test(`returns CURSOR_STALE when reset occurs ${phase}`, async () => {
+      const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-query-race-"));
+      temporaryDirectories.push(home);
+      const started = await runCli(home, ["create", "--json"]);
+      const sessionId = (JSON.parse(started.stdout) as CommandResult).scope.sessionId ?? "";
+      const persistence = await Persistence.open(home);
+      await new EventStore(persistence).append(sessionId, {
+        data: { index: 1 },
+        hypothesisId: "H1",
+        id: "race",
+        location: "src/query-race.ts:1",
+        message: "race",
+        receivedAt: 1,
+        sequence: 1,
+        timestamp: 1,
+      });
+      const daemon = await ensureDaemon({ homeDirectory: home });
+      const reset = async () => {
+        await requestDaemonControl(daemon, `/v1/control/sessions/${sessionId}/reset`, {
+          method: "POST",
+        });
+      };
+      const parsed = await parseCli([
+        "query",
+        "--session",
+        sessionId,
+        "--json",
+        phase === "during-native" ? "[range(0; 500000)] | length" : ".id",
+      ]);
+      if ("helpText" in parsed || parsed.command.kind !== "query") {
+        throw new Error("Expected a parsed query command");
+      }
+      const previousHome = process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE;
+      process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE = home;
+      try {
+        const output = await queryCommand(parsed.command, parsed.json, {
+          ...(phase === "after-preflight" ? { afterPreflight: reset } : {}),
+          ...(phase === "during-native"
+            ? {
+                executeNative: async (execute) => {
+                  const resetting = reset();
+                  const result = execute();
+                  await resetting;
+                  return result;
+                },
+              }
+            : {}),
+          ...(phase === "after-native" ? { afterNative: reset } : {}),
+        });
+        expect(output.ok).toBe(false);
+        if (output.ok) {
+          throw new Error("Expected stale query output");
+        }
+        expect(output.error.code).toBe("CURSOR_STALE");
+        expect(output.error.code).not.toBe("EVIDENCE_MALFORMED");
+      } finally {
+        if (previousHome === undefined) {
+          delete process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE;
+        } else {
+          process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE = previousHome;
+        }
+        await requestDaemonShutdown(daemon);
+      }
+    });
+  }
+
   test("executes normal queries in-process without spawning a worker", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);

@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DiagnosticStore } from "../../../src/daemon/diagnostic-store";
-import { EventStore } from "../../../src/daemon/event-store";
+import { EventStore, type EventStoreOptions } from "../../../src/daemon/event-store";
 import { Persistence } from "../../../src/daemon/persistence";
 import { EventSequence } from "../../../src/daemon/sequence";
 import { SessionRegistry } from "../../../src/daemon/session-registry";
@@ -30,11 +30,11 @@ function event(id: string, sequence: number): NormalizedEvent {
   };
 }
 
-async function fixture(sortChunkSize?: number) {
+async function fixture(options: EventStoreOptions = {}) {
   const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
   temporaryDirectories.push(home);
   const persistence = await Persistence.open(home);
-  const store = new EventStore(persistence, { sortChunkSize });
+  const store = new EventStore(persistence, options);
   const diagnostics = new DiagnosticStore(persistence);
   const sequence = new EventSequence(store);
   const session = await new SessionRegistry(persistence, store, diagnostics, sequence).create();
@@ -81,7 +81,7 @@ describe("event store", () => {
   });
 
   test("externally sorts a larger page in bounded chunks and cleans temporary files", async () => {
-    const { persistence, session, store } = await fixture(7);
+    const { persistence, session, store } = await fixture({ sortChunkSize: 7 });
     const events = Array.from({ length: 250 }, (_, index) => ({
       ...event(`event-${index + 1}`, index + 1),
       timestamp: (index * 37) % 17,
@@ -108,5 +108,66 @@ describe("event store", () => {
     expect(page.totalRecords).toBe(250);
     expect(page.recordsByHypothesis).toEqual({ H1: 250 });
     expect(await readdir(join(persistence.sessionDirectory(session.id), "log-sort"))).toEqual([]);
+  });
+
+  test("closes every sorted reader after repeated early-limit pages", async () => {
+    let openReaders = 0;
+    let totalOpened = 0;
+    const { session, store } = await fixture({
+      sortChunkSize: 2,
+      sortedReaderHooks: {
+        onClose: () => {
+          openReaders -= 1;
+        },
+        onOpen: () => {
+          openReaders += 1;
+          totalOpened += 1;
+        },
+      },
+    });
+    for (let index = 0; index < 20; index += 1) {
+      await store.append(session.id, {
+        ...event(`reader-${index + 1}`, index + 1),
+        timestamp: 20 - index,
+      });
+    }
+
+    for (let offset = 0; offset < 5; offset += 1) {
+      const page = await store.readPage(session.id, {
+        hypothesisIds: [],
+        limit: 1,
+        offset,
+      });
+      expect(page.records).toHaveLength(1);
+      expect(openReaders).toBe(0);
+    }
+    expect(totalOpened).toBeGreaterThan(0);
+  });
+
+  test("closes readers opened before a partial reader-open failure", async () => {
+    let openReaders = 0;
+    const { session, store } = await fixture({
+      sortChunkSize: 1,
+      sortedReaderHooks: {
+        failOpenAt: 1,
+        onClose: () => {
+          openReaders -= 1;
+        },
+        onOpen: () => {
+          openReaders += 1;
+        },
+      },
+    });
+    await store.append(session.id, event("first-reader", 1));
+    await store.append(session.id, event("second-reader", 2));
+
+    await expect(
+      store.readPage(session.id, {
+        hypothesisIds: [],
+        limit: 1,
+        offset: 0,
+      }),
+    ).rejects.toThrow("Injected sorted reader open failure");
+    expect(openReaders).toBe(0);
   });
 });
