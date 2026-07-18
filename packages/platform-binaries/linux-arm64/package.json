@@ -1,6 +1,6 @@
 {
   "name": "@agentic-debug-mode/cli-linux-arm64",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "agentic-debug-mode binary for Linux ARM64",
   "license": "MIT",
   "os": [
