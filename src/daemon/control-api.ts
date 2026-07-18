@@ -1,5 +1,5 @@
 import type { DiagnosticStore } from "./diagnostic-store";
-import type { EventStore } from "./event-store";
+import { type EventPage, type EventStore, EvidenceEpochMismatchError } from "./event-store";
 import type { SessionRegistry } from "./session-registry";
 
 export class ControlApi {
@@ -101,6 +101,7 @@ export class ControlApi {
       const limit = Number(url.searchParams.get("limit") ?? "100");
       const watermarkValue = url.searchParams.get("watermark");
       const watermark = watermarkValue === null ? undefined : Number(watermarkValue);
+      const evidenceEpoch = url.searchParams.get("evidenceEpoch") ?? undefined;
       if (
         !Number.isSafeInteger(offset) ||
         offset < 0 ||
@@ -110,12 +111,21 @@ export class ControlApi {
       ) {
         return Response.json({ code: "INVALID_ARGUMENTS" }, { status: 400 });
       }
-      const page = await this.events.readPage(session.id, {
-        hypothesisIds: url.searchParams.getAll("hypothesis"),
-        limit,
-        offset,
-        watermark,
-      });
+      let page: EventPage;
+      try {
+        page = await this.events.readPage(session.id, {
+          evidenceEpoch,
+          hypothesisIds: url.searchParams.getAll("hypothesis"),
+          limit,
+          offset,
+          watermark,
+        });
+      } catch (error) {
+        if (error instanceof EvidenceEpochMismatchError) {
+          return Response.json({ code: error.code, message: error.message }, { status: 409 });
+        }
+        throw error;
+      }
       return Response.json({ diagnostics, ...page });
     }
 

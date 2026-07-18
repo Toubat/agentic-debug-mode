@@ -60,6 +60,39 @@ export class Persistence {
     });
   }
 
+  logSortFile(sessionId: string, operationId: string, fileId: string): string {
+    if (!SAFE_ID.test(operationId) || !SAFE_ID.test(fileId)) {
+      throw new Error("Invalid log sort file identifier");
+    }
+    return join(this.sessionDirectory(sessionId), "log-sort", operationId, `${fileId}.ndjson`);
+  }
+
+  async initializeLogSortOperation(sessionId: string, operationId: string): Promise<void> {
+    if (!SAFE_ID.test(operationId)) {
+      throw new Error(`Invalid log sort operation ID: ${operationId}`);
+    }
+    const root = join(this.sessionDirectory(sessionId), "log-sort");
+    await ensurePrivateDirectory(root);
+    await ensurePrivateDirectory(join(root, operationId));
+  }
+
+  async clearLogSortOperation(sessionId: string, operationId: string): Promise<void> {
+    if (!SAFE_ID.test(operationId)) {
+      throw new Error(`Invalid log sort operation ID: ${operationId}`);
+    }
+    await rm(join(this.sessionDirectory(sessionId), "log-sort", operationId), {
+      force: true,
+      recursive: true,
+    });
+  }
+
+  async clearLogSortOperations(sessionId: string): Promise<void> {
+    await rm(join(this.sessionDirectory(sessionId), "log-sort"), {
+      force: true,
+      recursive: true,
+    });
+  }
+
   async initializeSessionDirectory(sessionId: string): Promise<string> {
     const directory = this.sessionDirectory(sessionId);
     await ensurePrivateDirectory(directory);

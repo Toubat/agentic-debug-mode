@@ -41,9 +41,9 @@ totalRecords      5
 validRecords      4
 
 INDEX  VALUE
-1      "héllo 🌍"
-2      ""
-3      ""
+1      ""
+2      "héllo 🌍"
+3      "héllo 🌍"
 4      "quotes \\" and slash \\\\"
 
 STATUS  Inspect all evidence diagnostics.
@@ -73,38 +73,47 @@ RESULT 1 OF 8
 }
 RESULT 2 OF 8
 [
-  "",
-  "punctuation!?"
+  "split-0",
+  "split-1",
+  "split-2",
+  ""
 ]
 RESULT 3 OF 8
 {
   "active": false,
-  "label": "héllo 🌍",
+  "label": "quotes \\" and slash \\\\",
   "optional": null,
-  "score": 0
+  "score": 1000000
 }
 RESULT 4 OF 8
 [
-  "alpha"
+  "",
+  "punctuation!?"
 ]
 RESULT 5 OF 8
 {
   "active": false,
-  "label": "",
+  "label": "a.*[b]?",
   "optional": null,
-  "score": -999
+  "score": 0
 }
 RESULT 6 OF 8
-[]
+[
+  "",
+  "punctuation!?"
+]
 RESULT 7 OF 8
 {
-  "active": true,
-  "label": "",
+  "active": false,
+  "label": "héllo 🌍",
   "optional": null,
-  "score": 1.25
+  "score": 1000000
 }
 RESULT 8 OF 8
-[]
+[
+  "βeta",
+  "a.*"
+]
 
 STATUS  Inspect all evidence diagnostics.
   debug-mode status --session <SESSION_ID>

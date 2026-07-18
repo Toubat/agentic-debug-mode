@@ -1,11 +1,16 @@
-import { createReadStream } from "node:fs";
-import { appendFile, readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
+import { createReadStream, createWriteStream } from "node:fs";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
+import { finished } from "node:stream/promises";
 import type { NormalizedEvent } from "../domain/event";
-import { writeTextAtomic } from "../platform/atomic-file";
+import type { Session } from "../domain/session";
+import { readJsonFile, writeTextAtomic } from "../platform/atomic-file";
 import type { Persistence } from "./persistence";
 
 export interface EventPageOptions {
+  evidenceEpoch?: string;
   hypothesisIds: string[];
   limit: number;
   offset: number;
@@ -13,10 +18,24 @@ export interface EventPageOptions {
 }
 
 export interface EventPage {
+  evidenceEpoch: string;
   records: NormalizedEvent[];
   recordsByHypothesis: Record<string, number>;
   totalRecords: number;
   watermark: number;
+}
+
+export class EvidenceEpochMismatchError extends Error {
+  readonly code = "CURSOR_STALE";
+
+  constructor() {
+    super("Evidence cursor is stale because the session was reset.");
+    this.name = "EvidenceEpochMismatchError";
+  }
+}
+
+export interface EventStoreOptions {
+  sortChunkSize?: number;
 }
 
 export interface EventSummary {
@@ -24,10 +43,66 @@ export interface EventSummary {
   watermark: number;
 }
 
+const DEFAULT_SORT_CHUNK_SIZE = 512;
+const MERGE_FAN_IN = 32;
+
+function compareEvents(left: NormalizedEvent, right: NormalizedEvent): number {
+  return (
+    left.timestamp - right.timestamp ||
+    left.sequence - right.sequence ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+class SortedEventReader {
+  private readonly lines;
+  private readonly iterator;
+  current: NormalizedEvent | undefined;
+
+  constructor(path: string) {
+    this.lines = createInterface({
+      crlfDelay: Number.POSITIVE_INFINITY,
+      input: createReadStream(path, { encoding: "utf8" }),
+    });
+    this.iterator = this.lines[Symbol.asyncIterator]();
+  }
+
+  async advance(): Promise<void> {
+    const next = await this.iterator.next();
+    this.current = next.done ? undefined : (JSON.parse(next.value) as NormalizedEvent);
+  }
+
+  close(): void {
+    this.lines.close();
+  }
+}
+
+function nextReader(readers: SortedEventReader[]): SortedEventReader | undefined {
+  let selected: SortedEventReader | undefined;
+  for (const reader of readers) {
+    if (
+      reader.current &&
+      (!selected?.current || compareEvents(reader.current, selected.current) < 0)
+    ) {
+      selected = reader;
+    }
+  }
+  return selected;
+}
+
 export class EventStore {
   private readonly knownIds = new Map<string, Set<string>>();
+  private readonly sortChunkSize: number;
 
-  constructor(private readonly persistence: Persistence) {}
+  constructor(
+    private readonly persistence: Persistence,
+    options: EventStoreOptions = {},
+  ) {
+    this.sortChunkSize = options.sortChunkSize ?? DEFAULT_SORT_CHUNK_SIZE;
+    if (!Number.isSafeInteger(this.sortChunkSize) || this.sortChunkSize < 1) {
+      throw new Error("Event sort chunk size must be a positive safe integer");
+    }
+  }
 
   runSessionOperation<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
     return this.persistence.runSessionOperation(sessionId, operation);
@@ -103,42 +178,167 @@ export class EventStore {
     });
   }
 
+  private async writeSortedChunk(path: string, events: NormalizedEvent[]): Promise<void> {
+    events.sort(compareEvents);
+    await writeFile(path, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+  }
+
+  private async openSortedReaders(paths: string[]): Promise<SortedEventReader[]> {
+    const readers = paths.map((path) => new SortedEventReader(path));
+    await Promise.all(readers.map((reader) => reader.advance()));
+    return readers;
+  }
+
+  private async mergeSortedFiles(inputPaths: string[], outputPath: string): Promise<void> {
+    const readers = await this.openSortedReaders(inputPaths);
+    const output = createWriteStream(outputPath, {
+      encoding: "utf8",
+      flags: "wx",
+      mode: 0o600,
+    });
+    try {
+      while (true) {
+        const selected = nextReader(readers);
+        if (!selected?.current) {
+          break;
+        }
+        if (!output.write(`${JSON.stringify(selected.current)}\n`)) {
+          await once(output, "drain");
+        }
+        await selected.advance();
+      }
+      output.end();
+      await finished(output);
+    } finally {
+      for (const reader of readers) {
+        reader.close();
+      }
+      if (!output.closed) {
+        output.destroy();
+      }
+    }
+  }
+
+  private async readMergedPage(
+    paths: string[],
+    offset: number,
+    limit: number,
+  ): Promise<NormalizedEvent[]> {
+    const readers = await this.openSortedReaders(paths);
+    const records: NormalizedEvent[] = [];
+    let index = 0;
+    try {
+      while (records.length < limit) {
+        const selected = nextReader(readers);
+        if (!selected?.current) {
+          break;
+        }
+        if (index >= offset) {
+          records.push(selected.current);
+        }
+        index += 1;
+        await selected.advance();
+      }
+      return records;
+    } finally {
+      for (const reader of readers) {
+        reader.close();
+      }
+    }
+  }
+
   async readPage(sessionId: string, options: EventPageOptions): Promise<EventPage> {
     return this.runSessionOperation(sessionId, async () => {
-      const records: NormalizedEvent[] = [];
+      const session = await readJsonFile<Session>(
+        this.persistence.sessionFile(sessionId, "session.json"),
+      );
+      if (options.evidenceEpoch && options.evidenceEpoch !== session.evidenceEpoch) {
+        throw new EvidenceEpochMismatchError();
+      }
+      const operationId = randomUUID();
+      await this.persistence.initializeLogSortOperation(sessionId, operationId);
       const recordsByHypothesis: Record<string, number> = {};
       let totalRecords = 0;
       let watermark = options.watermark ?? 0;
-      const lines = createInterface({
-        crlfDelay: Number.POSITIVE_INFINITY,
-        input: createReadStream(this.persistence.sessionFile(sessionId, "events.ndjson"), {
-          encoding: "utf8",
-        }),
-      });
-      for await (const line of lines) {
-        if (!line) {
-          continue;
+      let fileIndex = 0;
+      let chunk: NormalizedEvent[] = [];
+      let sortedPaths: string[] = [];
+      try {
+        const flushChunk = async () => {
+          if (chunk.length === 0) {
+            return;
+          }
+          const path = this.persistence.logSortFile(sessionId, operationId, `chunk-${fileIndex}`);
+          fileIndex += 1;
+          await this.writeSortedChunk(path, chunk);
+          sortedPaths.push(path);
+          chunk = [];
+        };
+        const lines = createInterface({
+          crlfDelay: Number.POSITIVE_INFINITY,
+          input: createReadStream(this.persistence.sessionFile(sessionId, "events.ndjson"), {
+            encoding: "utf8",
+          }),
+        });
+        for await (const line of lines) {
+          if (!line) {
+            continue;
+          }
+          const event = JSON.parse(line) as NormalizedEvent;
+          if (options.watermark === undefined) {
+            watermark = Math.max(watermark, event.sequence);
+          } else if (event.sequence > options.watermark) {
+            continue;
+          }
+          if (
+            options.hypothesisIds.length > 0 &&
+            !options.hypothesisIds.includes(event.hypothesisId)
+          ) {
+            continue;
+          }
+          recordsByHypothesis[event.hypothesisId] =
+            (recordsByHypothesis[event.hypothesisId] ?? 0) + 1;
+          totalRecords += 1;
+          chunk.push(event);
+          if (chunk.length === this.sortChunkSize) {
+            await flushChunk();
+          }
         }
-        const event = JSON.parse(line) as NormalizedEvent;
-        if (options.watermark === undefined) {
-          watermark = Math.max(watermark, event.sequence);
-        } else if (event.sequence > options.watermark) {
-          continue;
+        await flushChunk();
+
+        while (sortedPaths.length > MERGE_FAN_IN) {
+          const mergedPaths: string[] = [];
+          for (let index = 0; index < sortedPaths.length; index += MERGE_FAN_IN) {
+            const group = sortedPaths.slice(index, index + MERGE_FAN_IN);
+            const outputPath = this.persistence.logSortFile(
+              sessionId,
+              operationId,
+              `merge-${fileIndex}`,
+            );
+            fileIndex += 1;
+            await this.mergeSortedFiles(group, outputPath);
+            mergedPaths.push(outputPath);
+          }
+          sortedPaths = mergedPaths;
         }
-        if (
-          options.hypothesisIds.length > 0 &&
-          !options.hypothesisIds.includes(event.hypothesisId)
-        ) {
-          continue;
-        }
-        recordsByHypothesis[event.hypothesisId] =
-          (recordsByHypothesis[event.hypothesisId] ?? 0) + 1;
-        if (totalRecords >= options.offset && records.length < options.limit) {
-          records.push(event);
-        }
-        totalRecords += 1;
+        const records =
+          sortedPaths.length === 0
+            ? []
+            : await this.readMergedPage(sortedPaths, options.offset, options.limit);
+        return {
+          evidenceEpoch: session.evidenceEpoch,
+          records,
+          recordsByHypothesis,
+          totalRecords,
+          watermark,
+        };
+      } finally {
+        await this.persistence.clearLogSortOperation(sessionId, operationId);
       }
-      return { records, recordsByHypothesis, totalRecords, watermark };
     });
   }
 }

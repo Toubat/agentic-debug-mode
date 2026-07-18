@@ -12,6 +12,7 @@ type LogsOptions = Extract<CliInvocation["command"], { kind: "logs" }>;
 
 interface LogsResponse {
   diagnostics: EvidenceDiagnostic[];
+  evidenceEpoch: string;
   records: NormalizedEvent[];
   recordsByHypothesis: Record<string, number>;
   totalRecords: number;
@@ -64,33 +65,19 @@ function pageCommand(
 }
 
 export async function logsCommand(options: LogsOptions, json: boolean): Promise<CommandOutput> {
-  const sessionId = options.sessionId;
-  const offset = options.offset;
-  const limit = options.limit;
-  if (!sessionId || offset === undefined || limit === undefined || limit < 1) {
-    return {
-      error: {
-        code: "INVALID_ARGUMENTS",
-        hint: "Provide --session, a non-negative --offset, and a positive --limit.",
-        message: "The logs command has invalid scope or pagination options.",
-      },
-      ok: false,
-      schemaVersion: 1,
-    };
-  }
+  const startedAt = performance.now();
+  const { hypotheses: hypothesisFilter, limit, offset, sessionId } = options;
 
   try {
     const sessionPath = sessionPathSegment(sessionId);
     const daemon = await ensureDaemon({
       homeDirectory: process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE,
     });
-    const hypothesisFilter = options.hypotheses;
     const requestedSnapshot = options.snapshot;
-    const requestedWatermark = requestedSnapshot
-      ? verifySnapshotCursor(daemon.controlToken, requestedSnapshot, {
-          sessionId,
-        }).watermark
+    const requestedCursor = requestedSnapshot
+      ? verifySnapshotCursor(daemon.controlToken, requestedSnapshot, { sessionId })
       : undefined;
+    const requestedWatermark = requestedCursor?.watermark;
     const search = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
@@ -101,6 +88,9 @@ export async function logsCommand(options: LogsOptions, json: boolean): Promise<
     if (requestedWatermark !== undefined) {
       search.set("watermark", String(requestedWatermark));
     }
+    if (requestedCursor) {
+      search.set("evidenceEpoch", requestedCursor.evidenceEpoch);
+    }
     const response = await requestDaemonControl<LogsResponse>(
       daemon,
       `/v1/control/sessions/${sessionPath}/logs?${search}`,
@@ -109,6 +99,7 @@ export async function logsCommand(options: LogsOptions, json: boolean): Promise<
     const snapshot =
       requestedSnapshot ??
       createSnapshotCursor(daemon.controlToken, {
+        evidenceEpoch: response.evidenceEpoch,
         issuedAt: Date.now(),
         sessionId,
         watermark,
@@ -167,6 +158,7 @@ export async function logsCommand(options: LogsOptions, json: boolean): Promise<
         sessionId,
       },
       statistics: {
+        durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
         limit,
         malformedRecords,
         offset,

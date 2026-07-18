@@ -89,7 +89,7 @@ export function generateEvents(seed: number, count = 12): GeneratedEvent[] {
           score: random.pick(SCORES),
         },
         numbers: [...random.pick(NUMBER_SETS)],
-        tags: [...random.pick(TAG_SETS)],
+        tags: index === 0 ? ["split-0", "split-1", "split-2", ""] : [...random.pick(TAG_SETS)],
         text: random.pick(TEXTS),
       },
       hypothesisId: HYPOTHESES[index % HYPOTHESES.length] as string,
@@ -203,6 +203,13 @@ export const GENERATED_QUERY_CASES: GeneratedQueryCase[] = [
     limit: 4,
     name: "array-transform",
     program: ".data.numbers | map(. * 2)",
+    slurp: false,
+  },
+  {
+    expected: (events) => events.flatMap((event) => event.data.tags),
+    limit: 2,
+    name: "per-input-output-ordinal",
+    program: ".data.tags[]",
     slurp: false,
   },
   {

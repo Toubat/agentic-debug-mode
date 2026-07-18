@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export interface SnapshotCursorPayload {
+  evidenceEpoch: string;
   issuedAt: number;
   sessionId: string;
   watermark: number;
@@ -20,7 +21,6 @@ export type QueryContinuation =
 
 export interface QueryCursorPayload extends SnapshotCursorPayload {
   continuation: QueryContinuation;
-  evidenceEpoch: string;
   hypotheses: string[];
   json: boolean;
   limit: number;
@@ -76,6 +76,7 @@ export function verifySnapshotCursor(
   const payload = value as Record<string, unknown>;
   if (
     payload.version !== 1 ||
+    typeof payload.evidenceEpoch !== "string" ||
     typeof payload.issuedAt !== "number" ||
     typeof payload.sessionId !== "string" ||
     typeof payload.watermark !== "number" ||
@@ -88,6 +89,7 @@ export function verifySnapshotCursor(
     throw new Error("Snapshot cursor scope does not match");
   }
   return {
+    evidenceEpoch: payload.evidenceEpoch,
     issuedAt: payload.issuedAt,
     sessionId: payload.sessionId,
     watermark: payload.watermark,

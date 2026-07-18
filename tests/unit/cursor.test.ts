@@ -9,6 +9,7 @@ import {
 describe("snapshot cursor", () => {
   test("round-trips signed scope and rejects tampering", () => {
     const cursor = createSnapshotCursor("control-secret", {
+      evidenceEpoch: "epoch-1",
       issuedAt: 1_784_310_000_000,
       sessionId: "session-1",
       watermark: 42,
@@ -18,7 +19,7 @@ describe("snapshot cursor", () => {
       verifySnapshotCursor("control-secret", cursor, {
         sessionId: "session-1",
       }),
-    ).toMatchObject({ watermark: 42 });
+    ).toMatchObject({ evidenceEpoch: "epoch-1", watermark: 42 });
     expect(() =>
       verifySnapshotCursor("control-secret", `${cursor}x`, {
         sessionId: "session-1",

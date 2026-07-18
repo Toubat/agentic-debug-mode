@@ -285,6 +285,65 @@ describe("jaq query command", () => {
     }
   });
 
+  test("missing slurp continuation spool returns resource exhaustion without reevaluation", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
+    temporaryDirectories.push(home);
+    const started = await runCli(home, ["create", "--json"]);
+    const sessionId = (JSON.parse(started.stdout) as CommandResult).scope.sessionId ?? "";
+    const persistence = await Persistence.open(home);
+    const events = new EventStore(persistence);
+    for (const [index, id] of ["first", "second"].entries()) {
+      await events.append(sessionId, {
+        data: { index },
+        hypothesisId: "H1",
+        id,
+        location: `src/query.ts:${index + 1}`,
+        message: id,
+        receivedAt: index + 1,
+        sequence: index + 1,
+        timestamp: index + 1,
+      });
+    }
+
+    try {
+      const first = await runCli(home, [
+        "query",
+        "--session",
+        sessionId,
+        "--slurp",
+        "--limit",
+        "1",
+        "--json",
+        ".[] | .id",
+      ]);
+      expect(first.exitCode, first.stderr).toBe(0);
+      const output = JSON.parse(first.stdout) as CommandResult<{
+        pagination: { nextCursor?: string };
+      }>;
+      const cursor = output.data.pagination.nextCursor ?? "";
+      const payload = JSON.parse(
+        Buffer.from(cursor.split(".")[0] ?? "", "base64url").toString("utf8"),
+      ) as { continuation?: { spoolId?: string } };
+      const spoolId = payload.continuation?.spoolId ?? "";
+      await rm(persistence.querySpoolFile(sessionId, spoolId), { force: true });
+      await writeFile(persistence.sessionFile(sessionId, "events.ndjson"), "{not-json}\n");
+
+      const continued = await runCli(home, [
+        "query",
+        "--session",
+        sessionId,
+        "--cursor",
+        cursor,
+        "--json",
+      ]);
+      expect(continued.exitCode).toBe(1);
+      expect(continued.stderr).toContain("QUERY_RESOURCE_EXHAUSTED");
+      expect(continued.stderr).not.toContain("EVIDENCE_MALFORMED");
+    } finally {
+      await requestDaemonShutdown(await ensureDaemon({ homeDirectory: home }));
+    }
+  });
+
   test("supports per-event streaming and explicit slurp semantics", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);

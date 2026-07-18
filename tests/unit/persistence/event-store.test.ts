@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DiagnosticStore } from "../../../src/daemon/diagnostic-store";
@@ -30,15 +30,15 @@ function event(id: string, sequence: number): NormalizedEvent {
   };
 }
 
-async function fixture() {
+async function fixture(sortChunkSize?: number) {
   const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
   temporaryDirectories.push(home);
   const persistence = await Persistence.open(home);
-  const store = new EventStore(persistence);
+  const store = new EventStore(persistence, { sortChunkSize });
   const diagnostics = new DiagnosticStore(persistence);
   const sequence = new EventSequence(store);
   const session = await new SessionRegistry(persistence, store, diagnostics, sequence).create();
-  return { session, store };
+  return { persistence, session, store };
 }
 
 describe("event store", () => {
@@ -72,10 +72,41 @@ describe("event store", () => {
         watermark: 3,
       }),
     ).toEqual({
+      evidenceEpoch: session.evidenceEpoch,
       records: [expect.objectContaining({ id: "second" })],
       recordsByHypothesis: { H1: 2, H9: 1 },
       totalRecords: 3,
       watermark: 3,
     });
+  });
+
+  test("externally sorts a larger page in bounded chunks and cleans temporary files", async () => {
+    const { persistence, session, store } = await fixture(7);
+    const events = Array.from({ length: 250 }, (_, index) => ({
+      ...event(`event-${index + 1}`, index + 1),
+      timestamp: (index * 37) % 17,
+    }));
+    for (const item of events) {
+      await store.append(session.id, item);
+    }
+    const expected = [...events].sort(
+      (left, right) =>
+        left.timestamp - right.timestamp ||
+        left.sequence - right.sequence ||
+        left.id.localeCompare(right.id),
+    );
+
+    const page = await store.readPage(session.id, {
+      hypothesisIds: [],
+      limit: 25,
+      offset: 40,
+    });
+
+    expect(page.records.map((item) => item.id)).toEqual(
+      expected.slice(40, 65).map((item) => item.id),
+    );
+    expect(page.totalRecords).toBe(250);
+    expect(page.recordsByHypothesis).toEqual({ H1: 250 });
+    expect(await readdir(join(persistence.sessionDirectory(session.id), "log-sort"))).toEqual([]);
   });
 });

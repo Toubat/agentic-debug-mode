@@ -566,7 +566,13 @@ fn run_slurp_page(
 ) -> std::result::Result<QueryPage, QueryExecutionError> {
     let deadline = QueryDeadline::new(timeout_ms)?;
     let mut scanned_records = 0_u64;
-    if !std::path::Path::new(&spool_path).exists() {
+    let spool_exists = std::path::Path::new(&spool_path).exists();
+    if spool_byte_offset > 0 && !spool_exists {
+        return Err(QueryExecutionError::Resource(
+            "Query continuation spool is unavailable.".to_owned(),
+        ));
+    }
+    if !spool_exists {
         let hypotheses: Vec<String> =
             serde_json::from_str(&hypotheses_json).map_err(query_error)?;
         let source = File {
@@ -990,6 +996,40 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&second).unwrap()["results"],
             serde_json::json!(["b"])
+        );
+    }
+
+    #[test]
+    fn missing_slurp_continuation_spool_never_reevaluates() {
+        let base = std::env::temp_dir().join(format!(
+            "agentic-debug-mode-query-missing-spool-{}",
+            std::process::id()
+        ));
+        let path = base.with_extension("ndjson");
+        let spool = base.with_extension("spool");
+        fs::write(
+            &path,
+            "{\"id\":\"a\",\"hypothesisId\":\"H1\",\"sequence\":1}\n",
+        )
+        .unwrap();
+        let _ = fs::remove_file(&spool);
+
+        let output = run_jaq_slurp_page(
+            "error(\"must not reevaluate\")".to_owned(),
+            path.to_string_lossy().into_owned(),
+            "[]".to_owned(),
+            1.0,
+            spool.to_string_lossy().into_owned(),
+            1.0,
+            1.0,
+            1_000.0,
+        )
+        .unwrap();
+        fs::remove_file(path).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&output).unwrap()["error"]["code"],
+            super::QUERY_SPOOL_UNAVAILABLE_CODE
         );
     }
 

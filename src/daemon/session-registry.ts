@@ -110,6 +110,7 @@ export class SessionRegistry {
       await Promise.all([
         this.events.clear(sessionId),
         this.diagnostics.clear(sessionId),
+        this.persistence.clearLogSortOperations(sessionId),
         this.persistence.clearQuerySpools(sessionId),
         writeTextAtomic(this.persistence.sessionFile(sessionId, "incoming.ndjson"), ""),
         writeJsonAtomic(this.persistence.sessionFile(sessionId, "incoming.cursor.json"), {
