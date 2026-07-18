@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { retryOnWindowsLock } from "../../src/platform/windows-lock-retry";
 
 const root = join(import.meta.dir, "..", "..");
 // The launcher reports the root package version live, so track it rather than a
@@ -55,9 +56,13 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await Promise.all(
+    // These directories hold the installed binary that the test just executed;
+    // Windows keeps it locked briefly after exit, so retry rm on transient locks.
     temporaryDirectories
       .splice(0)
-      .map((directory) => rm(directory, { force: true, recursive: true })),
+      .map((directory) =>
+        retryOnWindowsLock(() => rm(directory, { force: true, recursive: true })),
+      ),
   );
 });
 

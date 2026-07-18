@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chmod, rm } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
+import { retryOnWindowsLock } from "../../src/platform/windows-lock-retry";
 
 const root = join(import.meta.dir, "..", "..");
 const executableName = process.platform === "win32" ? "debug-mode.exe" : "debug-mode";
@@ -31,7 +32,9 @@ describe("standalone native addon distribution", () => {
   }, 120_000);
 
   afterAll(async () => {
-    await rm(join(root, "dist"), { force: true, recursive: true });
+    // Windows keeps the just-executed standalone exe locked briefly after exit,
+    // so removing dist can transiently fail with EBUSY/EPERM; retry until released.
+    await retryOnWindowsLock(() => rm(join(root, "dist"), { force: true, recursive: true }));
   });
 
   test("embeds both N-API addons and runs without Bun on PATH", async () => {
