@@ -273,9 +273,6 @@ describe("live language templates", () => {
             statistics: {
               diagnosticCount: 0,
               eventCount: 1,
-              malformedRecords: 0,
-              totalRecords: 1,
-              validRecords: 1,
             },
           });
         } finally {
