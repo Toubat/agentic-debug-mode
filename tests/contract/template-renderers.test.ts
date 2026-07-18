@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseCli } from "../../src/cli/program";
 import { templateCommand } from "../../src/commands/template";
+import { SENSITIVE_KEY_EXACT, SENSITIVE_KEY_QUALIFIED } from "../../src/domain/redaction";
 import {
   type IngestMethod,
   renderTemplate,
@@ -117,6 +118,15 @@ describe("session-independent template renderers", () => {
     expect(powershell).not.toContain("$Value -is [ValueType]");
     expect(powershell).toContain("IsEnum");
     expect(powershell).toContain(".GetFields(");
+  });
+
+  test("generated helpers contain the canonical sensitive-key policy matrix", () => {
+    for (const [language, ingest] of supported) {
+      const helper = renderTemplate(language, ingest).helperTemplate;
+      for (const key of [...SENSITIVE_KEY_EXACT, ...SENSITIVE_KEY_QUALIFIED]) {
+        expect(helper, `${language} omits canonical key ${key}`).toContain(key);
+      }
+    }
   });
 
   test("normalizes documented aliases and casing", () => {

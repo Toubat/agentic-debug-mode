@@ -1,6 +1,50 @@
 import type { JsonValue } from "./event";
 
-const SECRET_KEY = /^(authorization|cookie|password|private[-_]?key|secret|token)$/i;
+export const SENSITIVE_KEY_EXACT = [
+  "authorization",
+  "authorization_header",
+  "cookie",
+  "set_cookie",
+  "password",
+  "passwd",
+  "pwd",
+  "private_key",
+  "secret",
+  "token",
+  "credential",
+  "credentials",
+] as const;
+
+export const SENSITIVE_KEY_QUALIFIED = [
+  "api_key",
+  "api_token",
+  "oauth_token",
+  "o_auth_token",
+  "private_key",
+  "client_secret",
+  "access_token",
+  "refresh_token",
+  "id_token",
+  "auth_token",
+  "bearer_token",
+] as const;
+
+const SENSITIVE_KEY_SET = new Set<string>(SENSITIVE_KEY_EXACT);
+const SENSITIVE_QUALIFIED_SUFFIX = new RegExp(`(^|_)(${SENSITIVE_KEY_QUALIFIED.join("|")})$`);
+
+export function normalizeSensitiveKey(key: string): string {
+  return key
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .toLowerCase()
+    .replace(/^_+|_+$/g, "");
+}
+
+export function isSensitiveKey(key: string): boolean {
+  const normalized = normalizeSensitiveKey(key);
+  return SENSITIVE_KEY_SET.has(normalized) || SENSITIVE_QUALIFIED_SUFFIX.test(normalized);
+}
 
 export interface RedactionResult {
   redactedPaths: string[];
@@ -15,7 +59,7 @@ function redact(value: JsonValue, path: string, redactedPaths: string[]): JsonVa
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => {
         const itemPath = path ? `${path}.${key}` : key;
-        if (SECRET_KEY.test(key)) {
+        if (isSensitiveKey(key)) {
           redactedPaths.push(itemPath);
           return [key, "[REDACTED]"];
         }

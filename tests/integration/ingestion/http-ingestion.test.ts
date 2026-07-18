@@ -186,6 +186,59 @@ describe("HTTP ingestion", () => {
     }
   });
 
+  test("canonically redacts raw acronym keys without redacting lookalikes", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
+    temporaryDirectories.push(home);
+    const connection = await ensureDaemon({ homeDirectory: home });
+
+    try {
+      const createdResponse = await fetch(
+        `http://${connection.host}:${connection.port}/v1/control/sessions`,
+        {
+          body: "{}",
+          headers: {
+            Authorization: `Bearer ${connection.controlToken}`,
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        },
+      );
+      const created = (await createdResponse.json()) as {
+        ingestUrl: string;
+        sessionId: string;
+      };
+      const ingested = await fetch(created.ingestUrl, {
+        body: JSON.stringify({
+          data: {
+            APIKey: "raw-api-key",
+            APIToken: "raw-api-token",
+            IDToken: "raw-id-token",
+            OAuthToken: "raw-oauth-token",
+            nested: [{ designToken: "safe-design", fortuneCookie: "safe-cookie" }],
+          },
+          hypothesisId: "H-acronym",
+          location: "src/raw-http.ts:1",
+          message: "Raw HTTP acronym policy",
+          timestamp: 1_784_310_000_125,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      expect(ingested.status).toBe(202);
+
+      const [event] = await new EventStore(await Persistence.open(home)).read(created.sessionId);
+      expect(event?.data).toEqual({
+        APIKey: "[REDACTED]",
+        APIToken: "[REDACTED]",
+        IDToken: "[REDACTED]",
+        OAuthToken: "[REDACTED]",
+        nested: [{ designToken: "safe-design", fortuneCookie: "safe-cookie" }],
+      });
+    } finally {
+      await requestDaemonShutdown(connection);
+    }
+  });
+
   test("rejects obsolete and unknown ingestion routes without retargeting", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);

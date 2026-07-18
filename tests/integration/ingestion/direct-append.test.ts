@@ -109,4 +109,59 @@ describe("direct append ingestion", () => {
       await requestDaemonShutdown(connection);
     }
   }, 10_000);
+
+  test("canonically redacts raw direct-file acronym keys without redacting lookalikes", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
+    temporaryDirectories.push(home);
+    const connection = await ensureDaemon({ homeDirectory: home });
+    const persistence = await Persistence.open(home);
+
+    try {
+      const response = await fetch(
+        `http://${connection.host}:${connection.port}/v1/control/sessions`,
+        {
+          body: "{}",
+          headers: {
+            Authorization: `Bearer ${connection.controlToken}`,
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        },
+      );
+      const created = (await response.json()) as { sessionId: string };
+      const incoming = persistence.sessionFile(created.sessionId, "incoming.ndjson");
+      await appendFile(
+        incoming,
+        `${JSON.stringify({
+          data: {
+            APIKey: "raw-api-key",
+            APIToken: "raw-api-token",
+            IDToken: "raw-id-token",
+            OAuthToken: "raw-oauth-token",
+            nested: [{ passwordPolicy: "safe-policy", secretSauceName: "safe-sauce" }],
+          },
+          hypothesisId: "H-acronym",
+          location: "worker.py:20",
+          message: "Raw direct acronym policy",
+          timestamp: 3,
+        })}\n`,
+      );
+
+      const store = new EventStore(persistence);
+      const deadline = Date.now() + 2_000;
+      while ((await store.read(created.sessionId)).length < 1 && Date.now() < deadline) {
+        await Bun.sleep(20);
+      }
+      const [event] = await store.read(created.sessionId);
+      expect(event?.data).toEqual({
+        APIKey: "[REDACTED]",
+        APIToken: "[REDACTED]",
+        IDToken: "[REDACTED]",
+        OAuthToken: "[REDACTED]",
+        nested: [{ passwordPolicy: "safe-policy", secretSauceName: "safe-sauce" }],
+      });
+    } finally {
+      await requestDaemonShutdown(connection);
+    }
+  }, 10_000);
 });
