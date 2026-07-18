@@ -15,7 +15,7 @@ export function renderJavaScriptTemplate(): ProbeTemplates {
     '    "password", "passwd", "pwd", "private_key", "secret", "token",',
     '    "credential", "credentials",',
     "  ]).has(normalized) ||",
-    "    /(^|_)(password|passwd|pwd|secret|token|api_key|api_token|oauth_token|o_auth_token|authorization|authorization_header|cookie|set_cookie|private_key|client_secret|access_token|refresh_token|id_token|auth_token|bearer_token|credential|credentials)$/.test(normalized);",
+    "    /(^|_)(api_key|api_token|oauth_token|o_auth_token|private_key|client_secret|access_token|refresh_token|id_token|auth_token|bearer_token)$/.test(normalized);",
     "};",
     "",
     "const __agentDebugRedact = (value, active = new WeakSet(), depth = 0) => {",

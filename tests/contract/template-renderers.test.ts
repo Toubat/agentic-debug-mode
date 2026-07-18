@@ -57,6 +57,11 @@ describe("session-independent template renderers", () => {
       expect(template.helperTemplate).toContain("oauth_token");
       expect(template.helperTemplate).toMatch(/\(\[A-Z\]\+\).*?\(\[A-Z\]\[a-z\]\)/);
       expect(template.helperTemplate.toLowerCase()).toMatch(/active|depth/);
+      for (const exactOnly of ["password", "secret", "token", "cookie"]) {
+        expect(template.helperTemplate.match(new RegExp(`\\b${exactOnly}\\b`, "g"))).toHaveLength(
+          1,
+        );
+      }
       for (const sensitiveKey of [
         "password",
         "secret",
@@ -99,6 +104,19 @@ describe("session-independent template renderers", () => {
   test("Python redacts tuples as recursive JSON arrays", () => {
     const helper = renderTemplate("python", "file").helperTemplate;
     expect(helper).toContain("(list, tuple)");
+  });
+
+  test("C# and PowerShell inspect custom value types instead of treating them as atomic", () => {
+    const csharp = renderTemplate("csharp", "file").helperTemplate;
+    expect(csharp).not.toContain("value.GetType().IsValueType");
+    expect(csharp).toContain("IsPrimitive");
+    expect(csharp).toContain("IsEnum");
+    expect(csharp).toContain("GetFields");
+
+    const powershell = renderTemplate("powershell", "file").helperTemplate;
+    expect(powershell).not.toContain("$Value -is [ValueType]");
+    expect(powershell).toContain("IsEnum");
+    expect(powershell).toContain(".GetFields(");
   });
 
   test("normalizes documented aliases and casing", () => {

@@ -19,7 +19,7 @@ export function renderPythonTemplate(): ProbeTemplates {
     '    normalized = re.sub(r"([a-z0-9])([A-Z])", r"\\1_\\2", normalized)',
     '    normalized = re.sub(r"[^a-zA-Z0-9]+", "_", normalized).lower().strip("_")',
     "    return normalized in __agent_debug_secret_keys or re.search(",
-    '        r"(^|_)(password|passwd|pwd|secret|token|api_key|api_token|oauth_token|o_auth_token|authorization|authorization_header|cookie|set_cookie|private_key|client_secret|access_token|refresh_token|id_token|auth_token|bearer_token|credential|credentials)$",',
+    '        r"(^|_)(api_key|api_token|oauth_token|o_auth_token|private_key|client_secret|access_token|refresh_token|id_token|auth_token|bearer_token)$",',
     "        normalized,",
     "    ) is not None",
     "",

@@ -22,7 +22,7 @@ export function renderRubyTemplate(): ProbeTemplates {
       '  normalized = normalized.gsub(/([a-z0-9])([A-Z])/, "\\\\1_\\\\2")',
       '  normalized = normalized.gsub(/[^a-zA-Z0-9]+/, "_").downcase.gsub(/^_+|_+$/, "")',
       "  AGENT_DEBUG_SECRET_KEYS.include?(normalized) ||",
-      "    /(^|_)(password|passwd|pwd|secret|token|api_key|api_token|oauth_token|o_auth_token|authorization|authorization_header|cookie|set_cookie|private_key|client_secret|access_token|refresh_token|id_token|auth_token|bearer_token|credential|credentials)$/.match?(normalized)",
+      "    /(^|_)(api_key|api_token|oauth_token|o_auth_token|private_key|client_secret|access_token|refresh_token|id_token|auth_token|bearer_token)$/.match?(normalized)",
       "end",
       "",
       "def __agent_debug_redact(value, active = {}, depth = 0)",

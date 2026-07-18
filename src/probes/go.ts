@@ -19,7 +19,7 @@ export function renderGoTemplate(): ProbeTemplates {
       'var __agentDebugAcronymBoundary = regexp.MustCompile("([A-Z]+)([A-Z][a-z])")',
       'var __agentDebugCamelBoundary = regexp.MustCompile("([a-z0-9])([A-Z])")',
       'var __agentDebugSeparators = regexp.MustCompile("[^a-zA-Z0-9]+")',
-      'var __agentDebugSecretSuffix = regexp.MustCompile("(^|_)(password|passwd|pwd|secret|token|api_key|api_token|oauth_token|o_auth_token|authorization|authorization_header|cookie|set_cookie|private_key|client_secret|access_token|refresh_token|id_token|auth_token|bearer_token|credential|credentials)$")',
+      'var __agentDebugSecretSuffix = regexp.MustCompile("(^|_)(api_key|api_token|oauth_token|o_auth_token|private_key|client_secret|access_token|refresh_token|id_token|auth_token|bearer_token)$")',
       "var __agentDebugSecretKeys = map[string]bool{",
       '\t"authorization": true, "authorization_header": true, "cookie": true, "set_cookie": true,',
       '\t"password": true, "passwd": true, "pwd": true, "private_key": true, "secret": true, "token": true,',

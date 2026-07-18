@@ -46,7 +46,7 @@ interface Fixture {
 const fixtures: Fixture[] = [
   {
     callData:
-      '{ value: 42, userPassword: "source-password-secret", APIKey: "source-api-acronym-secret", APIToken: "source-api-token-secret", IDToken: "source-id-token-secret", OAuthToken: "source-oauth-token-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
+      '{ value: 42, designToken: "visible-design-token", fortuneCookie: "visible-fortune-cookie", secretSauceName: "visible-secret-sauce", tokenCount: 7, passwordPolicy: "visible-password-policy", password: "source-password-secret", APIKey: "source-api-acronym-secret", APIToken: "source-api-token-secret", IDToken: "source-id-token-secret", OAuthToken: "source-oauth-token-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
     command: (path) => [Bun.which("node") ?? "", path],
     cycleData: "__agentCycle",
     cyclePrelude: "const __agentCycle = {}; __agentCycle.self = __agentCycle;",
@@ -59,7 +59,7 @@ const fixtures: Fixture[] = [
   },
   {
     callData:
-      '{ value: 42, userPassword: "source-password-secret", APIKey: "source-api-acronym-secret", APIToken: "source-api-token-secret", IDToken: "source-id-token-secret", OAuthToken: "source-oauth-token-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
+      '{ value: 42, designToken: "visible-design-token", fortuneCookie: "visible-fortune-cookie", secretSauceName: "visible-secret-sauce", tokenCount: 7, passwordPolicy: "visible-password-policy", password: "source-password-secret", APIKey: "source-api-acronym-secret", APIToken: "source-api-token-secret", IDToken: "source-id-token-secret", OAuthToken: "source-oauth-token-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
     command: (path) => [process.execPath, path],
     cycleData: "__agentCycle",
     cyclePrelude:
@@ -74,7 +74,7 @@ const fixtures: Fixture[] = [
   },
   {
     callData:
-      '{"value": 42, "userPassword": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": {"apiKey": "source-api-secret", "items": ({"refresh-token": "source-refresh-secret"}, {"credentials": "source-credentials-secret"})}}',
+      '{"value": 42, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": {"apiKey": "source-api-secret", "items": ({"refresh-token": "source-refresh-secret"}, {"credentials": "source-credentials-secret"})}}',
     command: (path) => [Bun.which("python3") ?? "", path],
     cycleData: "__agent_cycle",
     cyclePrelude: '__agent_cycle = {}; __agent_cycle["self"] = __agent_cycle',
@@ -87,7 +87,7 @@ const fixtures: Fixture[] = [
   },
   {
     callData:
-      'map[string]any{"value": 42, "userPassword": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": map[string]any{"apiKey": "source-api-secret", "items": []any{map[string]string{"refresh-token": "source-refresh-secret"}, map[string]string{"credentials": "source-credentials-secret"}}}}',
+      'map[string]any{"value": 42, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": map[string]any{"apiKey": "source-api-secret", "items": []any{map[string]string{"refresh-token": "source-refresh-secret"}, map[string]string{"credentials": "source-credentials-secret"}}}}',
     command: (path) => [Bun.which("go") ?? "", "run", path],
     cycleData: "__agentCycle",
     cyclePrelude: '__agentCycle := map[string]any{}; __agentCycle["self"] = __agentCycle',
@@ -100,7 +100,7 @@ const fixtures: Fixture[] = [
   },
   {
     callData:
-      '{ "value" => 42, "userPassword" => "source-password-secret", "APIKey" => "source-api-acronym-secret", "APIToken" => "source-api-token-secret", "IDToken" => "source-id-token-secret", "OAuthToken" => "source-oauth-token-secret", "Client Secret" => "source-client-secret", "nested" => { "apiKey" => "source-api-secret", "items" => [{ "refresh-token" => "source-refresh-secret" }, { "credentials" => "source-credentials-secret" }] } }',
+      '{ "value" => 42, "designToken" => "visible-design-token", "fortuneCookie" => "visible-fortune-cookie", "secretSauceName" => "visible-secret-sauce", "tokenCount" => 7, "passwordPolicy" => "visible-password-policy", "password" => "source-password-secret", "APIKey" => "source-api-acronym-secret", "APIToken" => "source-api-token-secret", "IDToken" => "source-id-token-secret", "OAuthToken" => "source-oauth-token-secret", "Client Secret" => "source-client-secret", "nested" => { "apiKey" => "source-api-secret", "items" => [{ "refresh-token" => "source-refresh-secret" }, { "credentials" => "source-credentials-secret" }] } }',
     command: (path) => [Bun.which("ruby") ?? "", path],
     cycleData: "__agent_cycle",
     cyclePrelude: '__agent_cycle = {}; __agent_cycle["self"] = __agent_cycle',
@@ -113,7 +113,7 @@ const fixtures: Fixture[] = [
   },
   {
     callData:
-      '["value" => 42, "userPassword" => "source-password-secret", "APIKey" => "source-api-acronym-secret", "APIToken" => "source-api-token-secret", "IDToken" => "source-id-token-secret", "OAuthToken" => "source-oauth-token-secret", "Client Secret" => "source-client-secret", "nested" => ["apiKey" => "source-api-secret", "items" => [["refresh-token" => "source-refresh-secret"], ["credentials" => "source-credentials-secret"]]]]',
+      '["value" => 42, "designToken" => "visible-design-token", "fortuneCookie" => "visible-fortune-cookie", "secretSauceName" => "visible-secret-sauce", "tokenCount" => 7, "passwordPolicy" => "visible-password-policy", "password" => "source-password-secret", "APIKey" => "source-api-acronym-secret", "APIToken" => "source-api-token-secret", "IDToken" => "source-id-token-secret", "OAuthToken" => "source-oauth-token-secret", "Client Secret" => "source-client-secret", "nested" => ["apiKey" => "source-api-secret", "items" => [["refresh-token" => "source-refresh-secret"], ["credentials" => "source-credentials-secret"]]]]',
     command: (path) => [Bun.which("php") ?? "", path],
     cycleData: "$__agentCycle",
     cyclePrelude: '$__agentCycle = []; $__agentCycle["self"] = &$__agentCycle;',
@@ -126,7 +126,7 @@ const fixtures: Fixture[] = [
   },
   {
     callData:
-      '@{ value = 42; userPassword = "source-password-secret"; APIKey = "source-api-acronym-secret"; APIToken = "source-api-token-secret"; IDToken = "source-id-token-secret"; OAuthToken = "source-oauth-token-secret"; "Client Secret" = "source-client-secret"; nested = @{ apiKey = "source-api-secret"; items = @(@{ "refresh-token" = "source-refresh-secret" }, @{ credentials = "source-credentials-secret" }) } }',
+      '@{ value = 42; designToken = "visible-design-token"; fortuneCookie = "visible-fortune-cookie"; secretSauceName = "visible-secret-sauce"; tokenCount = 7; passwordPolicy = "visible-password-policy"; password = "source-password-secret"; APIKey = "source-api-acronym-secret"; APIToken = "source-api-token-secret"; IDToken = "source-id-token-secret"; OAuthToken = "source-oauth-token-secret"; "Client Secret" = "source-client-secret"; nested = @{ apiKey = "source-api-secret"; items = @(@{ "refresh-token" = "source-refresh-secret" }, @{ credentials = "source-credentials-secret" }) } }',
     command: (path) => [Bun.which("pwsh") ?? "", "-File", path],
     cycleData: "$__agentCycle",
     cyclePrelude: "$__agentCycle = @{}; $__agentCycle.self = $__agentCycle",
@@ -139,7 +139,7 @@ const fixtures: Fixture[] = [
   },
   {
     callData:
-      'new Dictionary<string, object?> { ["value"] = 42, ["userPassword"] = "source-password-secret", ["APIKey"] = "source-api-acronym-secret", ["APIToken"] = "source-api-token-secret", ["IDToken"] = "source-id-token-secret", ["OAuthToken"] = "source-oauth-token-secret", ["Client Secret"] = "source-client-secret", ["nested"] = new Dictionary<string, object?> { ["apiKey"] = "source-api-secret", ["items"] = new object?[] { new Dictionary<string, object?> { ["refresh-token"] = "source-refresh-secret" }, new Dictionary<string, object?> { ["credentials"] = "source-credentials-secret" } } } }',
+      'new Dictionary<string, object?> { ["value"] = 42, ["designToken"] = "visible-design-token", ["fortuneCookie"] = "visible-fortune-cookie", ["secretSauceName"] = "visible-secret-sauce", ["tokenCount"] = 7, ["passwordPolicy"] = "visible-password-policy", ["password"] = "source-password-secret", ["APIKey"] = "source-api-acronym-secret", ["APIToken"] = "source-api-token-secret", ["IDToken"] = "source-id-token-secret", ["OAuthToken"] = "source-oauth-token-secret", ["Client Secret"] = "source-client-secret", ["nested"] = new Dictionary<string, object?> { ["apiKey"] = "source-api-secret", ["items"] = new object?[] { new Dictionary<string, object?> { ["refresh-token"] = "source-refresh-secret" }, new Dictionary<string, object?> { ["credentials"] = "source-credentials-secret" } } } }',
     command: (path) => [Bun.which("dotnet") ?? "", "run", "--project", join(path, "..")],
     cycleData: "__agentCycle",
     cyclePrelude:
@@ -165,7 +165,7 @@ const fixtures: Fixture[] = [
   },
   {
     callData:
-      '["value": 42, "userPassword": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": ["apiKey": "source-api-secret", "items": [["refresh-token": "source-refresh-secret"], ["credentials": "source-credentials-secret"]]]]',
+      '["value": 42, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": ["apiKey": "source-api-secret", "items": [["refresh-token": "source-refresh-secret"], ["credentials": "source-credentials-secret"]]]]',
     command: (path) => [Bun.which("swift") ?? "", path],
     cycleData: "__agentCycle",
     cyclePrelude: 'let __agentCycle = NSMutableDictionary(); __agentCycle["self"] = __agentCycle',
@@ -373,11 +373,16 @@ describe("live language templates", () => {
               "Client Secret": "[REDACTED]",
               IDToken: "[REDACTED]",
               OAuthToken: "[REDACTED]",
+              designToken: "visible-design-token",
+              fortuneCookie: "visible-fortune-cookie",
               nested: {
                 apiKey: "[REDACTED]",
                 items: [{ "refresh-token": "[REDACTED]" }, { credentials: "[REDACTED]" }],
               },
-              userPassword: "[REDACTED]",
+              passwordPolicy: "visible-password-policy",
+              secretSauceName: "visible-secret-sauce",
+              tokenCount: 7,
+              password: "[REDACTED]",
               value: 42,
             },
             hypothesisId: "H-live",
@@ -617,6 +622,101 @@ describe("live language templates", () => {
         await runCli(home, ["stop", "--json"]);
       }
     }, 30_000);
+  }
+
+  for (const language of ["csharp", "powershell"]) {
+    const fixture = fixtures.find((candidate) => candidate.language === language);
+    const unavailable = fixture?.runtime === null;
+    const runtimeTest = unavailable && !requireRuntimes ? test.skip : test;
+
+    runtimeTest(
+      `${language} redacts custom value-type members`,
+      async () => {
+        if (!fixture) {
+          throw new Error(`Missing ${language} fixture`);
+        }
+        expect(fixture.runtime, `${language} runtime must be installed`).not.toBeNull();
+        const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+        const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${language}-value-type-`));
+        temporaryDirectories.push(home, workspace);
+        const created = await createSession(home);
+        const rendered = await render(home, fixture);
+        let source = await readFile(
+          join(root, "tests", "fixtures", "languages", fixture.file),
+          "utf8",
+        );
+        await fixture.setup?.(workspace);
+        const fixturePath = join(workspace, fixture.file);
+        const isCSharp = language === "csharp";
+        const prelude = isCSharp
+          ? [
+              "var __agentValue = new AgentCustomValue",
+              "{",
+              '    APIKey = "source-value-api-secret",',
+              '    designToken = "visible-value-design-token",',
+              '    Nested = new Dictionary<string, object?> { ["OAuthToken"] = "source-value-oauth-secret" },',
+              "};",
+            ].join("\n")
+          : [
+              "Add-Type -TypeDefinition @'",
+              "public struct AgentCustomValue {",
+              "    public string APIKey { get; set; }",
+              "    public object Nested { get; set; }",
+              "    public string designToken;",
+              "}",
+              "'@",
+              "$__agentValue = [AgentCustomValue]::new()",
+              '$__agentValue.APIKey = "source-value-api-secret"',
+              '$__agentValue.designToken = "visible-value-design-token"',
+              '$__agentValue.Nested = @{ OAuthToken = "source-value-oauth-secret" }',
+            ].join("\n");
+        if (isCSharp) {
+          source = source.replace(
+            "/* __EXTRA_TYPES__ */",
+            [
+              "internal struct AgentCustomValue",
+              "{",
+              "    public string APIKey { get; init; }",
+              "    public Dictionary<string, object?> Nested;",
+              "    public string designToken;",
+              "}",
+            ].join("\n"),
+          );
+        }
+        await writeFile(
+          fixturePath,
+          materialize(
+            source,
+            rendered.data,
+            fixture,
+            created.data.appendPath.replaceAll("\\", "\\\\"),
+            1,
+            isCSharp ? "__agentValue" : "$__agentValue",
+            prelude,
+          ),
+        );
+
+        try {
+          const executed = await run(fixture.command(fixturePath));
+          expect(executed.exitCode, executed.stderr).toBe(0);
+          const raw = await readFile(created.data.appendPath, "utf8");
+          expect(raw).not.toContain("source-value-api-secret");
+          expect(raw).not.toContain("source-value-oauth-secret");
+          expect(raw).toContain("visible-value-design-token");
+          const [event] = await awaitRecords(home, created.data.sessionId, 1);
+          expect(event).toMatchObject({
+            data: {
+              APIKey: "[REDACTED]",
+              Nested: { OAuthToken: "[REDACTED]" },
+              designToken: "visible-value-design-token",
+            },
+          });
+        } finally {
+          await runCli(home, ["stop", "--json"]);
+        }
+      },
+      30_000,
+    );
   }
 
   if (process.platform === "darwin") {

@@ -28,7 +28,7 @@ export function renderSwiftTemplate(): ProbeTemplates {
       '    normalized = normalized.replacingOccurrences(of: "[^a-zA-Z0-9]+", with: "_", options: .regularExpression)',
       '        .lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "_"))',
       "    if __agentDebugSecretKeys.contains(normalized) { return true }",
-      '    return normalized.range(of: "(^|_)(password|passwd|pwd|secret|token|api_key|api_token|oauth_token|o_auth_token|authorization|authorization_header|cookie|set_cookie|private_key|client_secret|access_token|refresh_token|id_token|auth_token|bearer_token|credential|credentials)$", options: .regularExpression) != nil',
+      '    return normalized.range(of: "(^|_)(api_key|api_token|oauth_token|o_auth_token|private_key|client_secret|access_token|refresh_token|id_token|auth_token|bearer_token)$", options: .regularExpression) != nil',
       "}",
       "",
       "func __agentDebugRedact(_ value: Any) throws -> Any {",
