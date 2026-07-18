@@ -5,6 +5,7 @@ import { MAX_HYPOTHESIS_ID_LENGTH } from "./ingestion";
 import { redactSecrets } from "./redaction";
 
 export interface EventValidationContext {
+  diagnosticId?: string;
   eventId?: string;
   receivedAt: number;
   sequence: number;
@@ -60,9 +61,10 @@ function diagnostic(
   message: string,
   raw: Record<string, unknown>,
   observedAt: number,
+  diagnosticId?: string,
 ): EvidenceDiagnostic {
   return {
-    diagnosticId: `diag_${randomUUID()}`,
+    diagnosticId: diagnosticId ?? `diag_${randomUUID()}`,
     message,
     observedAt,
     reason,
@@ -80,7 +82,13 @@ export function validateAndNormalizeEvent(
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return {
       diagnostics: [
-        diagnostic("INVALID_SCHEMA", "An event must be a JSON object.", {}, context.receivedAt),
+        diagnostic(
+          "INVALID_SCHEMA",
+          "An event must be a JSON object.",
+          {},
+          context.receivedAt,
+          context.diagnosticId,
+        ),
       ],
     };
   }
@@ -106,6 +114,7 @@ export function validateAndNormalizeEvent(
           "The event does not match the required bounded schema or route scope.",
           raw,
           context.receivedAt,
+          context.diagnosticId,
         ),
       ],
     };

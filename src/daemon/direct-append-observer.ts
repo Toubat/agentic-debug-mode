@@ -152,7 +152,6 @@ export class DirectAppendObserver {
               await this.hooks.afterEventAppend?.();
               break;
             case "invalid":
-              break;
             case "malformed":
             case "too-large":
               await this.hooks.afterDiagnosticAppend?.();

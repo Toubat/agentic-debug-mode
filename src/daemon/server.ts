@@ -1,4 +1,3 @@
-import { once } from "node:events";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import packageJson from "../../package.json";
 import { inspectProcess } from "../native/system";
@@ -18,6 +17,10 @@ import { publishReadyCandidate, removeOwnedDaemonState, removeReadyCandidate } f
 const MAX_REQUEST_BODY_BYTES = 128 * 1024;
 
 class RequestBodyTooLargeError extends Error {}
+
+export interface DaemonServerHooks {
+  onResponseFinished?(): void;
+}
 
 function incomingHeaders(request: IncomingMessage): Headers {
   const headers = new Headers();
@@ -58,7 +61,44 @@ function writeJson(response: ServerResponse, status: number, value: unknown): vo
   response.end(body);
 }
 
-async function writeWebResponse(outgoing: ServerResponse, response: Response): Promise<void> {
+function waitForDrainOrDisconnect(outgoing: ServerResponse, signal: AbortSignal): Promise<boolean> {
+  if (outgoing.destroyed || signal.aborted) {
+    return Promise.resolve(false);
+  }
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const cleanup = () => {
+      outgoing.off("drain", onDrain);
+      outgoing.off("close", onDisconnect);
+      outgoing.off("error", onDisconnect);
+      signal.removeEventListener("abort", onDisconnect);
+    };
+    const settle = (drained: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(drained);
+    };
+    const onDrain = () => settle(true);
+    const onDisconnect = () => settle(false);
+    outgoing.once("drain", onDrain);
+    outgoing.once("close", onDisconnect);
+    outgoing.once("error", onDisconnect);
+    signal.addEventListener("abort", onDisconnect, { once: true });
+    if (outgoing.destroyed || signal.aborted) {
+      settle(false);
+    }
+  });
+}
+
+async function writeWebResponse(
+  outgoing: ServerResponse,
+  response: Response,
+  signal: AbortSignal,
+  hooks: DaemonServerHooks,
+): Promise<void> {
   outgoing.statusCode = response.status;
   response.headers.forEach((value, name) => {
     outgoing.setHeader(name, value);
@@ -75,11 +115,15 @@ async function writeWebResponse(outgoing: ServerResponse, response: Response): P
         break;
       }
       if (!outgoing.write(Buffer.from(chunk.value))) {
-        await once(outgoing, "drain");
+        if (!(await waitForDrainOrDisconnect(outgoing, signal))) {
+          break;
+        }
       }
     }
   } finally {
     await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+    hooks.onResponseFinished?.();
   }
   if (!outgoing.destroyed) {
     outgoing.end();
@@ -91,6 +135,7 @@ export interface StartDaemonServerOptions {
   controlApi: ControlApi;
   getActiveSessionCount(): Promise<number>;
   ingestApi: IngestApi;
+  hooks?: DaemonServerHooks;
   nonce: string;
   stateRoot: string;
 }
@@ -170,7 +215,7 @@ export async function startDaemonServer(
         ingestionTarget.kind === "ingestion" ? ingestionTarget.pathname : url.pathname;
       const ingestResponse = await options.ingestApi.handle(request, pathname);
       if (ingestResponse) {
-        await writeWebResponse(outgoing, ingestResponse);
+        await writeWebResponse(outgoing, ingestResponse, abort.signal, options.hooks ?? {});
         return;
       }
       if (!isAuthorized(request, options.controlToken)) {
@@ -184,6 +229,8 @@ export async function startDaemonServer(
             ...metadata,
             activeSessions: await options.getActiveSessionCount(),
           }),
+          abort.signal,
+          options.hooks ?? {},
         );
         return;
       }
@@ -191,7 +238,12 @@ export async function startDaemonServer(
         setTimeout(() => {
           void stop();
         }, 10);
-        await writeWebResponse(outgoing, Response.json({ accepted: true }, { status: 202 }));
+        await writeWebResponse(
+          outgoing,
+          Response.json({ accepted: true }, { status: 202 }),
+          abort.signal,
+          options.hooks ?? {},
+        );
         return;
       }
       const controlResponse = await options.controlApi.handle(
@@ -200,7 +252,7 @@ export async function startDaemonServer(
         `http://${metadata.host}:${metadata.port}`,
       );
       if (controlResponse) {
-        await writeWebResponse(outgoing, controlResponse);
+        await writeWebResponse(outgoing, controlResponse, abort.signal, options.hooks ?? {});
         return;
       }
       writeJson(outgoing, 404, { error: "not-found" });

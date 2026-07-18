@@ -307,6 +307,76 @@ describe("Task 5 review findings", () => {
     }
   });
 
+  test("replays direct invalid-schema diagnostics idempotently", async () => {
+    for (const invalid of [
+      event({ message: undefined }),
+      event({ timestamp: "not-a-number" }),
+      event({ hypothesisId: "H".repeat(257) }),
+    ]) {
+      const { diagnostics, events, ingestion, persistence, sessions } = await fixture();
+      const session = await sessions.create();
+      const line = JSON.stringify({ ...invalid, diagnosticId: "caller-controlled" });
+      await appendFile(sessions.incomingPath(session.id), `${line}\n`);
+      let failOnce = true;
+      const Observer = DirectAppendObserver as unknown as ObserverConstructor;
+      const failing = new Observer(persistence, sessions, ingestion, {
+        afterDiagnosticAppend: async () => {
+          if (failOnce) {
+            failOnce = false;
+            throw new Error("injected invalid-schema cursor failure");
+          }
+        },
+      });
+
+      await expect(processSession(failing, session.id)).rejects.toThrow(
+        "injected invalid-schema cursor failure",
+      );
+      const [firstDiagnostic] = await diagnostics.read(session.id);
+      if (!firstDiagnostic) {
+        throw new Error("Expected the invalid-schema diagnostic");
+      }
+      expect(firstDiagnostic.diagnosticId).toMatch(/^diag_[0-9a-f]{64}$/);
+      expect(firstDiagnostic.diagnosticId).not.toBe("caller-controlled");
+      expect(await events.read(session.id)).toEqual([]);
+      expect(
+        JSON.parse(
+          await readFile(persistence.sessionFile(session.id, "incoming.cursor.json"), "utf8"),
+        ),
+      ).toEqual({ offset: 0 });
+
+      const restartedEvents = new EventStore(persistence);
+      const restartedDiagnostics = new DiagnosticStore(persistence);
+      const restartedSequence = new EventSequence(restartedEvents);
+      const restartedSessions = new SessionRegistry(
+        persistence,
+        restartedEvents,
+        restartedDiagnostics,
+        restartedSequence,
+      );
+      const restartedIngestion = new IngestionService(
+        restartedSessions,
+        restartedEvents,
+        restartedDiagnostics,
+        restartedSequence,
+      );
+      await processSession(
+        new Observer(persistence, restartedSessions, restartedIngestion),
+        session.id,
+      );
+
+      expect(await restartedDiagnostics.read(session.id)).toEqual([firstDiagnostic]);
+      expect(
+        JSON.parse(
+          await readFile(persistence.sessionFile(session.id, "incoming.cursor.json"), "utf8"),
+        ),
+      ).toEqual({ offset: Buffer.byteLength(line) + 1 });
+      expect(await restartedIngestion.ingest(session.id, event())).toBe("accepted");
+      expect((await restartedEvents.read(session.id)).map((stored) => stored.sequence)).toEqual([
+        1,
+      ]);
+    }
+  });
+
   test("reports and replays a multichunk UTF-8 record without materializing it", async () => {
     const { diagnostics, ingestion, persistence, sessions } = await fixture();
     const session = await sessions.create();

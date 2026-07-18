@@ -143,6 +143,7 @@ export class IngestionService {
         return "not-found";
       }
       const result = validateAndNormalizeEvent(value, {
+        diagnosticId: options.diagnosticId,
         eventId: options.eventId,
         receivedAt: Date.now(),
         sequence: 0,
