@@ -1,30 +1,22 @@
-import type { ProbeContext } from "./render";
+import type { ProbeTemplates } from "./render";
 
-export interface JavaScriptProbeTemplates {
-  callTemplate: string;
-  helperTemplate: string;
-  language: "javascript";
-  replace: string[];
-  runtime: "browser-or-node";
-  transport: "http";
-}
-
-export function renderJavaScriptProbe(input: ProbeContext): JavaScriptProbeTemplates {
+export function renderJavaScriptTemplate(): ProbeTemplates {
   const helperTemplate = [
     "// #region agent log",
     "const __agentDebugEmit = (event) => {",
     "  try {",
-    "    const payload = {",
+    "    const payload = JSON.stringify({",
     "      ...event,",
     "      timestamp: Date.now(),",
-    "    };",
-    `    void fetch(${JSON.stringify(input.ingestUrl)}, {`,
+    '    }) + "\\n";',
+    "    if (new TextEncoder().encode(payload).byteLength > 65_536) return;",
+    '    void fetch("__INGEST_URL__", {',
     '      method: "POST",',
-    '      headers: { "Content-Type": "application/json" },',
-    "      body: JSON.stringify(payload),",
+    '      headers: { "Content-Type": "application/x-ndjson" },',
+    "      body: payload,",
     "    }).catch(() => undefined);",
     "  } catch {",
-    "    // Debug probes must never change application behavior.",
+    "    // Observations must never change application behavior.",
     "  }",
     "};",
     "// #endregion",
@@ -42,9 +34,15 @@ export function renderJavaScriptProbe(input: ProbeContext): JavaScriptProbeTempl
   return {
     callTemplate,
     helperTemplate,
+    ingest: "http",
     language: "javascript",
-    replace: ["__HYPOTHESIS_ID__", "__LOCATION__", "__MESSAGE__", "__DATA_EXPRESSION__"],
-    runtime: "browser-or-node",
-    transport: "http",
+    placeholders: {
+      __DATA_EXPRESSION__:
+        "Replace with a JSON-compatible JavaScript expression that has no secrets.",
+      __HYPOTHESIS_ID__: "Replace with the hypothesis label.",
+      __INGEST_URL__: "Replace with the ingestUrl returned by debug-mode create.",
+      __LOCATION__: "Replace with the observed source location.",
+      __MESSAGE__: "Replace with a constant observation message.",
+    },
   };
 }

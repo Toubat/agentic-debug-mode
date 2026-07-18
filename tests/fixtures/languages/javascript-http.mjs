@@ -3,3 +3,4 @@
 /* __CALL_TEMPLATE__ */
 
 await new Promise((resolve) => setTimeout(resolve, 200));
+console.log("application-completed");

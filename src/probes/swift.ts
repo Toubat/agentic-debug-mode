@@ -1,0 +1,50 @@
+import type { ProbeTemplates } from "./render";
+
+export function renderSwiftTemplate(): ProbeTemplates {
+  return {
+    callTemplate: [
+      "// #region agent log",
+      '__agentDebugEmit("__HYPOTHESIS_ID__", "__LOCATION__", "__MESSAGE__", __DATA_EXPRESSION__)',
+      "// #endregion",
+    ].join("\n"),
+    helperTemplate: [
+      "// #region agent log",
+      "import Foundation",
+      "",
+      "func __agentDebugEmit(_ hypothesisId: String, _ location: String, _ message: String, _ data: Any) {",
+      "    do {",
+      "        let event: [String: Any] = [",
+      '            "hypothesisId": hypothesisId,',
+      '            "location": location,',
+      '            "message": message,',
+      '            "data": data,',
+      '            "timestamp": Int64(Date().timeIntervalSince1970 * 1000),',
+      "        ]",
+      "        var payload = try JSONSerialization.data(withJSONObject: event)",
+      "        payload.append(0x0A)",
+      "        guard payload.count <= 65_536 else { return }",
+      '        let path = "__APPEND_PATH__"',
+      "        if !FileManager.default.fileExists(atPath: path) {",
+      "            _ = FileManager.default.createFile(atPath: path, contents: nil)",
+      "        }",
+      "        let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))",
+      "        defer { try? handle.close() }",
+      "        try handle.seekToEnd()",
+      "        try handle.write(contentsOf: payload)",
+      "    } catch {",
+      "        // Observations must never change application behavior.",
+      "    }",
+      "}",
+      "// #endregion",
+    ].join("\n"),
+    ingest: "file",
+    language: "swift",
+    placeholders: {
+      __APPEND_PATH__: "Replace with the appendPath returned by debug-mode create.",
+      __DATA_EXPRESSION__: "Replace with a JSON-compatible Swift expression that has no secrets.",
+      __HYPOTHESIS_ID__: "Replace with the hypothesis label.",
+      __LOCATION__: "Replace with the observed source location.",
+      __MESSAGE__: "Replace with a constant observation message.",
+    },
+  };
+}

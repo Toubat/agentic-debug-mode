@@ -1,17 +1,6 @@
-export interface TypeScriptProbeTemplates {
-  callTemplate: string;
-  helperTemplate: string;
-  language: "typescript";
-  replace: string[];
-  runtime: "browser-or-node";
-  transport: "http";
-}
+import type { ProbeTemplates } from "./render";
 
-export function renderTypeScriptProbe(input: {
-  ingestUrl: string;
-  runId: string;
-  sessionId: string;
-}): TypeScriptProbeTemplates {
+export function renderTypeScriptTemplate(): ProbeTemplates {
   const helperTemplate = [
     "// #region agent log",
     "const __agentDebugEmit = (event: {",
@@ -21,17 +10,18 @@ export function renderTypeScriptProbe(input: {
     "  data: unknown;",
     "}): void => {",
     "  try {",
-    "    const payload = {",
+    "    const payload = JSON.stringify({",
     "      ...event,",
     "      timestamp: Date.now(),",
-    "    };",
-    `    void fetch(${JSON.stringify(input.ingestUrl)}, {`,
+    '    }) + "\\n";',
+    "    if (new TextEncoder().encode(payload).byteLength > 65_536) return;",
+    '    void fetch("__INGEST_URL__", {',
     '      method: "POST",',
-    '      headers: { "Content-Type": "application/json" },',
-    "      body: JSON.stringify(payload),",
+    '      headers: { "Content-Type": "application/x-ndjson" },',
+    "      body: payload,",
     "    }).catch(() => undefined);",
     "  } catch {",
-    "    // Debug probes must never change application behavior.",
+    "    // Observations must never change application behavior.",
     "  }",
     "};",
     "// #endregion",
@@ -49,9 +39,15 @@ export function renderTypeScriptProbe(input: {
   return {
     callTemplate,
     helperTemplate,
+    ingest: "http",
     language: "typescript",
-    replace: ["__HYPOTHESIS_ID__", "__LOCATION__", "__MESSAGE__", "__DATA_EXPRESSION__"],
-    runtime: "browser-or-node",
-    transport: "http",
+    placeholders: {
+      __DATA_EXPRESSION__:
+        "Replace with a JSON-compatible TypeScript expression that has no secrets.",
+      __HYPOTHESIS_ID__: "Replace with the hypothesis label.",
+      __INGEST_URL__: "Replace with the ingestUrl returned by debug-mode create.",
+      __LOCATION__: "Replace with the observed source location.",
+      __MESSAGE__: "Replace with a constant observation message.",
+    },
   };
 }

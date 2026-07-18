@@ -6,19 +6,9 @@ import { resetCommand } from "../commands/reset";
 import { sessionsCommand } from "../commands/sessions";
 import { statusCommand } from "../commands/status";
 import { stopCommand } from "../commands/stop";
+import { templateCommand } from "../commands/template";
 import type { CommandOutput } from "./output-schema";
 import type { CliInvocation } from "./program";
-
-function pendingCommand(command: "template"): CommandOutput {
-  return {
-    error: {
-      code: "INVALID_ARGUMENTS",
-      message: `The ${command} command handler is not available yet.`,
-    },
-    ok: false,
-    schemaVersion: 1,
-  };
-}
 
 export async function dispatch(invocation: CliInvocation): Promise<CommandOutput> {
   const command = invocation.command;
@@ -26,7 +16,7 @@ export async function dispatch(invocation: CliInvocation): Promise<CommandOutput
     case "create":
       return createCommand();
     case "template":
-      return pendingCommand(command.kind);
+      return templateCommand(command.language, command.ingest);
     case "reset":
       return resetCommand(command.sessionId);
     case "logs":

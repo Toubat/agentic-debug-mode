@@ -1,3 +1,0 @@
-# __HELPER_TEMPLATE__
-
-# __CALL_TEMPLATE__

@@ -16,6 +16,7 @@ const ERROR_EXIT_CODES: Record<string, number> = {
   SESSION_AMBIGUOUS: EXIT_CODE.sessionNotFound,
   SESSION_NOT_FOUND: EXIT_CODE.sessionNotFound,
   UNSUPPORTED_LANGUAGE: EXIT_CODE.invalidArguments,
+  UNSUPPORTED_TEMPLATE: EXIT_CODE.invalidArguments,
   VERSION_INCOMPATIBLE: EXIT_CODE.versionIncompatible,
 };
 

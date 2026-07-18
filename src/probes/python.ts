@@ -1,34 +1,14 @@
-import type { ProbeContext } from "./render";
+import type { ProbeTemplates } from "./render";
 
-export interface PythonProbeTemplates {
-  callTemplate: string;
-  helperTemplate: string;
-  language: "python";
-  replace: string[];
-  runtime: "local";
-  transport: "direct-append";
-}
-
-export function renderPythonProbe(input: ProbeContext): PythonProbeTemplates {
+export function renderPythonTemplate(): ProbeTemplates {
   const helperTemplate = [
     "# region agent log",
-    "import atexit",
     "import json",
     "import os",
     "import time",
     "",
-    `__agent_debug_fd = os.open(${JSON.stringify(input.ingestPath)}, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)`,
-    "atexit.register(os.close, __agent_debug_fd)",
-    "",
     "def __agent_debug_emit(hypothesis_id, location, message, data):",
     "    try:",
-    "        if not isinstance(data, dict) or any(not isinstance(key, str) for key in data):",
-    "            return",
-    "        if any(",
-    "            value is not None and not isinstance(value, (str, int, float, bool))",
-    "            for value in data.values()",
-    "        ):",
-    "            return",
     "        payload = json.dumps(",
     "            {",
     '                "hypothesisId": hypothesis_id,',
@@ -40,9 +20,14 @@ export function renderPythonProbe(input: ProbeContext): PythonProbeTemplates {
     "            allow_nan=False,",
     '            separators=(",", ":"),',
     '        ).encode("utf-8") + b"\\n"',
-    "        if len(payload) <= 16_384:",
-    "            os.write(__agent_debug_fd, payload)",
-    "    except (OSError, TypeError, ValueError):",
+    "        if len(payload) > 65_536:",
+    "            return",
+    '        descriptor = os.open("__APPEND_PATH__", os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)',
+    "        try:",
+    "            os.write(descriptor, payload)",
+    "        finally:",
+    "            os.close(descriptor)",
+    "    except Exception:",
     "        pass",
     "# endregion",
   ].join("\n");
@@ -59,9 +44,14 @@ export function renderPythonProbe(input: ProbeContext): PythonProbeTemplates {
   return {
     callTemplate,
     helperTemplate,
+    ingest: "file",
     language: "python",
-    replace: ["__HYPOTHESIS_ID__", "__LOCATION__", "__MESSAGE__", "__DATA_EXPRESSION__"],
-    runtime: "local",
-    transport: "direct-append",
+    placeholders: {
+      __APPEND_PATH__: "Replace with the appendPath returned by debug-mode create.",
+      __DATA_EXPRESSION__: "Replace with a JSON-compatible Python expression that has no secrets.",
+      __HYPOTHESIS_ID__: "Replace with the hypothesis label.",
+      __LOCATION__: "Replace with the observed source location.",
+      __MESSAGE__: "Replace with a constant observation message.",
+    },
   };
 }
