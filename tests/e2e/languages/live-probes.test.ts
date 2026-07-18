@@ -3,6 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CommandResult } from "../../../src/cli/output-schema";
+import type { JsonValue } from "../../../src/domain/event";
+import { redactSecrets } from "../../../src/domain/redaction";
 import type { ProbeTemplates } from "../../../src/probes/render";
 
 const root = join(import.meta.dir, "..", "..", "..");
@@ -24,6 +26,34 @@ const sourceSecrets = [
   "source-id-token-secret",
   "source-oauth-token-secret",
 ] as const;
+const policyInput: JsonValue = {
+  APIKey: "source-api-acronym-secret",
+  APIToken: "source-api-token-secret",
+  "Client Secret": "source-client-secret",
+  IDToken: "source-id-token-secret",
+  OAuthToken: "source-oauth-token-secret",
+  designToken: "visible-design-token",
+  fortuneCookie: "visible-fortune-cookie",
+  nested: {
+    apiKey: "source-api-secret",
+    items: [
+      { "refresh-token": "source-refresh-secret" },
+      { credentials: "source-credentials-secret" },
+    ],
+  },
+  password: "source-password-secret",
+  passwordPolicy: "visible-password-policy",
+  secretSauceName: "visible-secret-sauce",
+  tokenCount: 7,
+  value: 42,
+};
+const canonicalPolicyData = redactSecrets(policyInput).value;
+const sharedPolicyLeaf = { APIKey: "source-shared-secret" };
+const sharedPolicyInput: JsonValue = {
+  left: sharedPolicyLeaf,
+  right: sharedPolicyLeaf,
+};
+const canonicalSharedPolicyData = redactSecrets(sharedPolicyInput).value;
 
 interface TemplateOutput extends ProbeTemplates {
   eventSchema: Record<string, string>;
@@ -364,27 +394,13 @@ describe("live language templates", () => {
             expect(raw).not.toContain(secret);
           }
           expect(raw).toContain("[REDACTED]");
+          const [rawLine] = raw.trim().split("\n");
+          const rawEvent = JSON.parse(rawLine ?? "") as { data: unknown };
+          expect(rawEvent.data).toEqual(canonicalPolicyData);
 
           const [event] = await awaitRecords(home, created.data.sessionId, 1);
+          expect(event?.data).toEqual(canonicalPolicyData);
           expect(event).toMatchObject({
-            data: {
-              APIKey: "[REDACTED]",
-              APIToken: "[REDACTED]",
-              "Client Secret": "[REDACTED]",
-              IDToken: "[REDACTED]",
-              OAuthToken: "[REDACTED]",
-              designToken: "visible-design-token",
-              fortuneCookie: "visible-fortune-cookie",
-              nested: {
-                apiKey: "[REDACTED]",
-                items: [{ "refresh-token": "[REDACTED]" }, { credentials: "[REDACTED]" }],
-              },
-              passwordPolicy: "visible-password-policy",
-              secretSauceName: "visible-secret-sauce",
-              tokenCount: 7,
-              password: "[REDACTED]",
-              value: 42,
-            },
             hypothesisId: "H-live",
             location: `${fixture.file}:1`,
             message: "Live fixture observed",
@@ -536,13 +552,11 @@ describe("live language templates", () => {
             ? capture.bodies.join("")
             : await readFile(created.data.appendPath, "utf8");
           expect(raw).not.toContain("source-shared-secret");
+          const [rawLine] = raw.trim().split("\n");
+          const rawEvent = JSON.parse(rawLine ?? "") as { data: unknown };
+          expect(rawEvent.data).toEqual(canonicalSharedPolicyData);
           const [event] = await awaitRecords(home, created.data.sessionId, 1);
-          expect(event).toMatchObject({
-            data: {
-              left: { APIKey: "[REDACTED]" },
-              right: { APIKey: "[REDACTED]" },
-            },
-          });
+          expect(event?.data).toEqual(canonicalSharedPolicyData);
         } finally {
           capture?.stop();
           await runCli(home, ["stop", "--json"]);
