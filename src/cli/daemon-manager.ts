@@ -191,20 +191,49 @@ async function tryAdoptReadyCandidate(
   return { ...health, controlToken };
 }
 
+// Confirm a recorded daemon is genuinely unreachable before treating it as
+// stale. A single health probe (500ms) can time out against a daemon that is
+// merely busy — e.g. serving a burst of concurrent create callers — and acting
+// on that false negative would terminate a live daemon out from under the
+// callers currently connected to it. Retry a few times so only a daemon that
+// stays silent is declared dead.
+async function probeDaemonHealth(
+  connection: Pick<DaemonConnection, "controlToken" | "host" | "port">,
+  clock: DaemonManagerClock,
+  attempts = 5,
+): Promise<DaemonMetadata | undefined> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const health = await readDaemonHealth(connection);
+    if (health) {
+      return health;
+    }
+    if (attempt < attempts - 1) {
+      await clock.sleep(100);
+    }
+  }
+  return undefined;
+}
+
 async function retireVerifiedStaleProcess(
   stateRoot: string,
   controlToken: string,
   clock: DaemonManagerClock,
-): Promise<void> {
+): Promise<DaemonConnection | undefined> {
   const state = await readDaemonState(stateRoot);
   if (!state) {
-    return;
+    return undefined;
   }
   const connection = { ...state, controlToken };
-  const health = await readDaemonHealth(connection);
+  const health = await probeDaemonHealth(connection, clock);
   if (health) {
     if (isCompatible(health)) {
-      return;
+      // The daemon is alive and compatible after all; never retire it. If it
+      // still matches the recorded identity, reuse it rather than spawning a
+      // redundant replacement.
+      if (health.nonce === state.nonce && health.pid === state.pid) {
+        return { ...health, controlToken };
+      }
+      return undefined;
     }
     if ((health.activeSessions ?? 0) > 0) {
       throw new DaemonVersionIncompatibleError(
@@ -212,7 +241,7 @@ async function retireVerifiedStaleProcess(
       );
     }
     await requestDaemonShutdown(connection);
-    return;
+    return undefined;
   }
 
   const process = inspectProcess(state.pid);
@@ -305,7 +334,10 @@ async function ensureDaemonOnce(
       if (rechecked) {
         return rechecked;
       }
-      await retireVerifiedStaleProcess(persistence.stateRoot, controlToken, clock);
+      const revived = await retireVerifiedStaleProcess(persistence.stateRoot, controlToken, clock);
+      if (revived) {
+        return revived;
+      }
       let lastStartupError: unknown;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         let spawned: SpawnedDaemon;

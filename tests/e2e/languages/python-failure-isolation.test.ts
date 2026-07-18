@@ -12,7 +12,7 @@ afterEach(async () => {
   await Promise.all(
     temporaryDirectories.splice(0).map((path) => rm(path, { force: true, recursive: true })),
   );
-});
+}, 30_000);
 
 describe("Python probe failure isolation", () => {
   test.skipIf(pythonExecutable === null)(

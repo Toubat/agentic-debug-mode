@@ -15,7 +15,7 @@ afterEach(async () => {
   );
 });
 
-async function createSession(home: string): Promise<string> {
+async function createSession(home: string, caller: number): Promise<string> {
   const child = Bun.spawn([process.execPath, join(root, "src", "cli.ts"), "create", "--json"], {
     cwd: root,
     env: { ...process.env, AGENT_DEBUG_MODE_HOME_OVERRIDE: home },
@@ -27,7 +27,11 @@ async function createSession(home: string): Promise<string> {
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
   ]);
-  expect(exitCode, stderr).toBe(0);
+  if (exitCode !== 0) {
+    throw new Error(
+      `caller ${caller} exited ${exitCode}\nstdout: ${stdout.trim()}\nstderr: ${stderr.trim()}`,
+    );
+  }
   const result = JSON.parse(stdout) as CommandResult<{ sessionId: string }>;
   return result.data.sessionId;
 }
@@ -37,7 +41,20 @@ describe("cross-process daemon startup", () => {
     const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
     temporaryDirectories.push(home);
 
-    const sessionIds = await Promise.all(Array.from({ length: 20 }, () => createSession(home)));
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: 20 }, (_, caller) => createSession(home, caller)),
+    );
+    const failures = outcomes.filter(
+      (outcome): outcome is PromiseRejectedResult => outcome.status === "rejected",
+    );
+    if (failures.length > 0) {
+      throw new Error(
+        `${failures.length}/20 create callers failed:\n${failures
+          .map((failure) => String(failure.reason))
+          .join("\n---\n")}`,
+      );
+    }
+    const sessionIds = outcomes.map((outcome) => (outcome as PromiseFulfilledResult<string>).value);
     expect(new Set(sessionIds).size).toBe(20);
 
     const connection = await ensureDaemon({ homeDirectory: home });

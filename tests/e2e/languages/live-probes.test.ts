@@ -350,7 +350,7 @@ async function awaitRecords(home: string, sessionId: string, expectedCount: numb
 beforeAll(async () => {
   const built = await run([process.execPath, "run", "build"]);
   expect(built.exitCode, built.stderr).toBe(0);
-});
+}, 120_000);
 
 afterAll(async () => {
   await Promise.all(
@@ -358,7 +358,7 @@ afterAll(async () => {
       .splice(0)
       .map((directory) => rm(directory, { force: true, recursive: true })),
   );
-});
+}, 60_000);
 
 describe("live language templates", () => {
   for (const fixture of fixtures.filter(
