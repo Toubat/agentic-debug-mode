@@ -19,6 +19,10 @@ const sourceSecrets = [
   "source-client-secret",
   "source-credentials-secret",
   "source-password-secret",
+  "source-api-acronym-secret",
+  "source-api-token-secret",
+  "source-id-token-secret",
+  "source-oauth-token-secret",
 ] as const;
 
 interface TemplateOutput extends ProbeTemplates {
@@ -28,85 +32,126 @@ interface TemplateOutput extends ProbeTemplates {
 interface Fixture {
   callData: string;
   command: (fixturePath: string) => string[];
+  cycleData: string;
+  cyclePrelude: string;
   file: string;
   ingest: "file" | "http";
   language: string;
   runtime: string | null;
   setup?: (workspace: string) => Promise<void>;
+  sharedData: string;
+  sharedPrelude: string;
 }
 
 const fixtures: Fixture[] = [
   {
     callData:
-      '{ value: 42, userPassword: "source-password-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
+      '{ value: 42, userPassword: "source-password-secret", APIKey: "source-api-acronym-secret", APIToken: "source-api-token-secret", IDToken: "source-id-token-secret", OAuthToken: "source-oauth-token-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
     command: (path) => [Bun.which("node") ?? "", path],
+    cycleData: "__agentCycle",
+    cyclePrelude: "const __agentCycle = {}; __agentCycle.self = __agentCycle;",
     file: "javascript-http.mjs",
     ingest: "http",
     language: "javascript",
     runtime: Bun.which("node"),
+    sharedData: "{ left: __agentShared, right: __agentShared }",
+    sharedPrelude: 'const __agentShared = { APIKey: "source-shared-secret" };',
   },
   {
     callData:
-      '{ value: 42, userPassword: "source-password-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
+      '{ value: 42, userPassword: "source-password-secret", APIKey: "source-api-acronym-secret", APIToken: "source-api-token-secret", IDToken: "source-id-token-secret", OAuthToken: "source-oauth-token-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
     command: (path) => [process.execPath, path],
+    cycleData: "__agentCycle",
+    cyclePrelude:
+      "const __agentCycle: Record<string, unknown> = {}; __agentCycle.self = __agentCycle;",
     file: "typescript-http.ts",
     ingest: "http",
     language: "typescript",
     runtime: process.execPath,
+    sharedData: "{ left: __agentShared, right: __agentShared }",
+    sharedPrelude:
+      'const __agentShared: Record<string, unknown> = { APIKey: "source-shared-secret" };',
   },
   {
     callData:
-      '{"value": 42, "userPassword": "source-password-secret", "Client Secret": "source-client-secret", "nested": {"apiKey": "source-api-secret", "items": [{"refresh-token": "source-refresh-secret"}, {"credentials": "source-credentials-secret"}]}}',
+      '{"value": 42, "userPassword": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": {"apiKey": "source-api-secret", "items": ({"refresh-token": "source-refresh-secret"}, {"credentials": "source-credentials-secret"})}}',
     command: (path) => [Bun.which("python3") ?? "", path],
+    cycleData: "__agent_cycle",
+    cyclePrelude: '__agent_cycle = {}; __agent_cycle["self"] = __agent_cycle',
     file: "python-file.py",
     ingest: "file",
     language: "python",
     runtime: Bun.which("python3"),
+    sharedData: '{"left": __agent_shared, "right": __agent_shared}',
+    sharedPrelude: '__agent_shared = {"APIKey": "source-shared-secret"}',
   },
   {
     callData:
-      'map[string]any{"value": 42, "userPassword": "source-password-secret", "Client Secret": "source-client-secret", "nested": map[string]any{"apiKey": "source-api-secret", "items": []any{map[string]string{"refresh-token": "source-refresh-secret"}, map[string]string{"credentials": "source-credentials-secret"}}}}',
+      'map[string]any{"value": 42, "userPassword": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": map[string]any{"apiKey": "source-api-secret", "items": []any{map[string]string{"refresh-token": "source-refresh-secret"}, map[string]string{"credentials": "source-credentials-secret"}}}}',
     command: (path) => [Bun.which("go") ?? "", "run", path],
+    cycleData: "__agentCycle",
+    cyclePrelude: '__agentCycle := map[string]any{}; __agentCycle["self"] = __agentCycle',
     file: "go-file.go",
     ingest: "file",
     language: "go",
     runtime: Bun.which("go"),
+    sharedData: 'map[string]any{"left": __agentShared, "right": __agentShared}',
+    sharedPrelude: '__agentShared := map[string]any{"APIKey": "source-shared-secret"}',
   },
   {
     callData:
-      '{ "value" => 42, "userPassword" => "source-password-secret", "Client Secret" => "source-client-secret", "nested" => { "apiKey" => "source-api-secret", "items" => [{ "refresh-token" => "source-refresh-secret" }, { "credentials" => "source-credentials-secret" }] } }',
+      '{ "value" => 42, "userPassword" => "source-password-secret", "APIKey" => "source-api-acronym-secret", "APIToken" => "source-api-token-secret", "IDToken" => "source-id-token-secret", "OAuthToken" => "source-oauth-token-secret", "Client Secret" => "source-client-secret", "nested" => { "apiKey" => "source-api-secret", "items" => [{ "refresh-token" => "source-refresh-secret" }, { "credentials" => "source-credentials-secret" }] } }',
     command: (path) => [Bun.which("ruby") ?? "", path],
+    cycleData: "__agent_cycle",
+    cyclePrelude: '__agent_cycle = {}; __agent_cycle["self"] = __agent_cycle',
     file: "ruby-file.rb",
     ingest: "file",
     language: "ruby",
     runtime: Bun.which("ruby"),
+    sharedData: '{ "left" => __agent_shared, "right" => __agent_shared }',
+    sharedPrelude: '__agent_shared = { "APIKey" => "source-shared-secret" }',
   },
   {
     callData:
-      '["value" => 42, "userPassword" => "source-password-secret", "Client Secret" => "source-client-secret", "nested" => ["apiKey" => "source-api-secret", "items" => [["refresh-token" => "source-refresh-secret"], ["credentials" => "source-credentials-secret"]]]]',
+      '["value" => 42, "userPassword" => "source-password-secret", "APIKey" => "source-api-acronym-secret", "APIToken" => "source-api-token-secret", "IDToken" => "source-id-token-secret", "OAuthToken" => "source-oauth-token-secret", "Client Secret" => "source-client-secret", "nested" => ["apiKey" => "source-api-secret", "items" => [["refresh-token" => "source-refresh-secret"], ["credentials" => "source-credentials-secret"]]]]',
     command: (path) => [Bun.which("php") ?? "", path],
+    cycleData: "$__agentCycle",
+    cyclePrelude: '$__agentCycle = []; $__agentCycle["self"] = &$__agentCycle;',
     file: "php-file.php",
     ingest: "file",
     language: "php",
     runtime: Bun.which("php"),
+    sharedData: '["left" => $__agentShared, "right" => $__agentShared]',
+    sharedPrelude: '$__agentShared = (object) ["APIKey" => "source-shared-secret"];',
   },
   {
     callData:
-      '@{ value = 42; userPassword = "source-password-secret"; "Client Secret" = "source-client-secret"; nested = @{ apiKey = "source-api-secret"; items = @(@{ "refresh-token" = "source-refresh-secret" }, @{ credentials = "source-credentials-secret" }) } }',
+      '@{ value = 42; userPassword = "source-password-secret"; APIKey = "source-api-acronym-secret"; APIToken = "source-api-token-secret"; IDToken = "source-id-token-secret"; OAuthToken = "source-oauth-token-secret"; "Client Secret" = "source-client-secret"; nested = @{ apiKey = "source-api-secret"; items = @(@{ "refresh-token" = "source-refresh-secret" }, @{ credentials = "source-credentials-secret" }) } }',
     command: (path) => [Bun.which("pwsh") ?? "", "-File", path],
+    cycleData: "$__agentCycle",
+    cyclePrelude: "$__agentCycle = @{}; $__agentCycle.self = $__agentCycle",
     file: "powershell-file.ps1",
     ingest: "file",
     language: "powershell",
     runtime: Bun.which("pwsh"),
+    sharedData: "@{ left = $__agentShared; right = $__agentShared }",
+    sharedPrelude: '$__agentShared = @{ APIKey = "source-shared-secret" }',
   },
   {
     callData:
-      'new Dictionary<string, object?> { ["value"] = 42, ["userPassword"] = "source-password-secret", ["Client Secret"] = "source-client-secret", ["nested"] = new Dictionary<string, object?> { ["apiKey"] = "source-api-secret", ["items"] = new object?[] { new Dictionary<string, object?> { ["refresh-token"] = "source-refresh-secret" }, new Dictionary<string, object?> { ["credentials"] = "source-credentials-secret" } } } }',
+      'new Dictionary<string, object?> { ["value"] = 42, ["userPassword"] = "source-password-secret", ["APIKey"] = "source-api-acronym-secret", ["APIToken"] = "source-api-token-secret", ["IDToken"] = "source-id-token-secret", ["OAuthToken"] = "source-oauth-token-secret", ["Client Secret"] = "source-client-secret", ["nested"] = new Dictionary<string, object?> { ["apiKey"] = "source-api-secret", ["items"] = new object?[] { new Dictionary<string, object?> { ["refresh-token"] = "source-refresh-secret" }, new Dictionary<string, object?> { ["credentials"] = "source-credentials-secret" } } } }',
     command: (path) => [Bun.which("dotnet") ?? "", "run", "--project", join(path, "..")],
+    cycleData: "__agentCycle",
+    cyclePrelude:
+      'var __agentCycle = new Dictionary<string, object?>(); __agentCycle["self"] = __agentCycle;',
     file: "Program.cs",
     ingest: "file",
     language: "csharp",
     runtime: Bun.which("dotnet"),
+    sharedData:
+      'new Dictionary<string, object?> { ["left"] = __agentShared, ["right"] = __agentShared }',
+    sharedPrelude:
+      'var __agentShared = new Dictionary<string, object?> { ["APIKey"] = "source-shared-secret" };',
     setup: async (workspace) => {
       const version = await run([Bun.which("dotnet") ?? "", "--version"]);
       expect(version.exitCode, version.stderr).toBe(0);
@@ -120,12 +165,16 @@ const fixtures: Fixture[] = [
   },
   {
     callData:
-      '["value": 42, "userPassword": "source-password-secret", "Client Secret": "source-client-secret", "nested": ["apiKey": "source-api-secret", "items": [["refresh-token": "source-refresh-secret"], ["credentials": "source-credentials-secret"]]]]',
+      '["value": 42, "userPassword": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": ["apiKey": "source-api-secret", "items": [["refresh-token": "source-refresh-secret"], ["credentials": "source-credentials-secret"]]]]',
     command: (path) => [Bun.which("swift") ?? "", path],
+    cycleData: "__agentCycle",
+    cyclePrelude: 'let __agentCycle = NSMutableDictionary(); __agentCycle["self"] = __agentCycle',
     file: "swift-file.swift",
     ingest: "file",
     language: "swift",
     runtime: process.platform === "darwin" ? Bun.which("swift") : null,
+    sharedData: '["left": __agentShared, "right": __agentShared]',
+    sharedPrelude: 'let __agentShared: [String: Any] = ["APIKey": "source-shared-secret"]',
   },
 ];
 
@@ -203,10 +252,12 @@ function materialize(
   fixture: Fixture,
   target: string,
   callCount = 1,
+  dataExpression = fixture.callData,
+  callPrelude = "",
 ): string {
   const values: Record<string, string> = {
     __APPEND_PATH__: target,
-    __DATA_EXPRESSION__: fixture.callData,
+    __DATA_EXPRESSION__: dataExpression,
     __HYPOTHESIS_ID__: "H-live",
     __INGEST_URL__: target,
     __LOCATION__: `${fixture.file}:1`,
@@ -225,7 +276,9 @@ function materialize(
       call = call.replaceAll(placeholder, value);
     }
   }
-  call = Array.from({ length: callCount }, () => call).join("\n");
+  call = [callPrelude, Array.from({ length: callCount }, () => call).join("\n")]
+    .filter(Boolean)
+    .join("\n");
   return source
     .replace("/* __HELPER_TEMPLATE__ */", helper)
     .replace("/* __CALL_TEMPLATE__ */", call)
@@ -315,7 +368,11 @@ describe("live language templates", () => {
           const [event] = await awaitRecords(home, created.data.sessionId, 1);
           expect(event).toMatchObject({
             data: {
+              APIKey: "[REDACTED]",
+              APIToken: "[REDACTED]",
               "Client Secret": "[REDACTED]",
+              IDToken: "[REDACTED]",
+              OAuthToken: "[REDACTED]",
               nested: {
                 apiKey: "[REDACTED]",
                 items: [{ "refresh-token": "[REDACTED]" }, { credentials: "[REDACTED]" }],
@@ -377,6 +434,114 @@ describe("live language templates", () => {
         const executed = await run(fixture.command(fixturePath));
         expect(executed.exitCode, executed.stderr).toBe(0);
         expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
+      },
+      30_000,
+    );
+
+    runtimeTest(
+      `${fixture.language} rejects cyclic values without emitting`,
+      async () => {
+        expect(fixture.runtime, `${fixture.language} runtime must be installed`).not.toBeNull();
+        const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+        const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${fixture.language}-cycle-`));
+        temporaryDirectories.push(home, workspace);
+        const created = await createSession(home);
+        const rendered = await render(home, fixture);
+        const source = await readFile(
+          join(root, "tests", "fixtures", "languages", fixture.file),
+          "utf8",
+        );
+        await fixture.setup?.(workspace);
+        const fixturePath = join(workspace, fixture.file);
+        const capture =
+          fixture.ingest === "http" ? startCaptureProxy(created.data.ingestUrl) : undefined;
+        const target = capture?.url ?? created.data.appendPath.replaceAll("\\", "\\\\");
+
+        try {
+          await writeFile(
+            fixturePath,
+            materialize(
+              source,
+              rendered.data,
+              fixture,
+              target,
+              1,
+              fixture.cycleData,
+              fixture.cyclePrelude,
+            ),
+          );
+          const executed = await run(fixture.command(fixturePath));
+          expect(executed.exitCode, executed.stderr).toBe(0);
+          expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
+          await Bun.sleep(200);
+          expect(capture?.bodies ?? []).toHaveLength(0);
+          const raw =
+            fixture.ingest === "file"
+              ? await readFile(created.data.appendPath, "utf8").catch(() => "")
+              : "";
+          expect(raw).toBe("");
+          const logs = await runCli(home, ["logs", "--session", created.data.sessionId, "--json"]);
+          expect(logs.exitCode, logs.stderr).toBe(0);
+          expect(JSON.parse(logs.stdout)).toMatchObject({
+            statistics: { totalRecords: 0 },
+          });
+        } finally {
+          capture?.stop();
+          await runCli(home, ["stop", "--json"]);
+        }
+      },
+      30_000,
+    );
+
+    runtimeTest(
+      `${fixture.language} accepts shared acyclic references`,
+      async () => {
+        expect(fixture.runtime, `${fixture.language} runtime must be installed`).not.toBeNull();
+        const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+        const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${fixture.language}-shared-`));
+        temporaryDirectories.push(home, workspace);
+        const created = await createSession(home);
+        const rendered = await render(home, fixture);
+        const source = await readFile(
+          join(root, "tests", "fixtures", "languages", fixture.file),
+          "utf8",
+        );
+        await fixture.setup?.(workspace);
+        const fixturePath = join(workspace, fixture.file);
+        const capture =
+          fixture.ingest === "http" ? startCaptureProxy(created.data.ingestUrl) : undefined;
+        const target = capture?.url ?? created.data.appendPath.replaceAll("\\", "\\\\");
+
+        try {
+          await writeFile(
+            fixturePath,
+            materialize(
+              source,
+              rendered.data,
+              fixture,
+              target,
+              1,
+              fixture.sharedData,
+              fixture.sharedPrelude,
+            ),
+          );
+          const executed = await run(fixture.command(fixturePath));
+          expect(executed.exitCode, executed.stderr).toBe(0);
+          const raw = capture
+            ? capture.bodies.join("")
+            : await readFile(created.data.appendPath, "utf8");
+          expect(raw).not.toContain("source-shared-secret");
+          const [event] = await awaitRecords(home, created.data.sessionId, 1);
+          expect(event).toMatchObject({
+            data: {
+              left: { APIKey: "[REDACTED]" },
+              right: { APIKey: "[REDACTED]" },
+            },
+          });
+        } finally {
+          capture?.stop();
+          await runCli(home, ["stop", "--json"]);
+        }
       },
       30_000,
     );

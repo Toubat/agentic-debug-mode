@@ -54,6 +54,9 @@ describe("session-independent template renderers", () => {
       expect(template.callTemplate).toContain("agent log");
       expect(template.helperTemplate).toMatch(/65_?536|65536|64 \* 1024/);
       expect(template.helperTemplate).toContain("[REDACTED]");
+      expect(template.helperTemplate).toContain("oauth_token");
+      expect(template.helperTemplate).toMatch(/\(\[A-Z\]\+\).*?\(\[A-Z\]\[a-z\]\)/);
+      expect(template.helperTemplate.toLowerCase()).toMatch(/active|depth/);
       for (const sensitiveKey of [
         "password",
         "secret",
@@ -91,6 +94,11 @@ describe("session-independent template renderers", () => {
     expect(helper).toContain("0o600");
     expect(helper).toContain("write(");
     expect(helper).not.toMatch(/seek|FileHandle/);
+  });
+
+  test("Python redacts tuples as recursive JSON arrays", () => {
+    const helper = renderTemplate("python", "file").helperTemplate;
+    expect(helper).toContain("(list, tuple)");
   });
 
   test("normalizes documented aliases and casing", () => {
