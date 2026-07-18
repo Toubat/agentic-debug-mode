@@ -48,7 +48,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bun run typecheck
-      - run: bun run build:native
+      - name: Build
+        run: bun run build
       - name: Core tests (contract, unit, integration, core e2e, skill)
         run: bun run test:core
         env:
