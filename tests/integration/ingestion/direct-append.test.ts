@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { appendFile, mkdtemp, rm } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { requestDaemonShutdown } from "../../../src/cli/daemon-client";
@@ -46,12 +46,12 @@ describe("direct append ingestion", () => {
       const first = {
         data: { record: 1 },
         hypothesisId: "H1",
-        id: "direct-1",
+        id: "caller-direct-1",
         location: "worker.py:10",
         message: "First record",
-        runId: created.runId,
-        schemaVersion: 1,
-        sessionId: created.sessionId,
+        runId: "caller-run",
+        schemaVersion: 99,
+        sessionId: "caller-session",
         timestamp: 1,
       };
       const second = {
@@ -75,7 +75,36 @@ describe("direct append ingestion", () => {
       while ((await store.read(created.sessionId)).length < 2 && Date.now() < secondDeadline) {
         await Bun.sleep(20);
       }
-      expect(await store.read(created.sessionId)).toHaveLength(2);
+      expect(await store.read(created.sessionId)).toEqual([
+        {
+          data: { record: 1 },
+          hypothesisId: "H1",
+          id: expect.stringMatching(/^evt_/),
+          location: "worker.py:10",
+          message: "First record",
+          receivedAt: expect.any(Number),
+          sequence: 1,
+          timestamp: 1,
+        },
+        {
+          data: { record: 2 },
+          hypothesisId: "H1",
+          id: expect.stringMatching(/^evt_/),
+          location: "worker.py:10",
+          message: "Second record",
+          receivedAt: expect.any(Number),
+          sequence: 2,
+          timestamp: 2,
+        },
+      ]);
+      const persisted = await readFile(
+        persistence.sessionFile(created.sessionId, "events.ndjson"),
+        "utf8",
+      );
+      expect(persisted).not.toContain("caller-direct");
+      expect(persisted).not.toContain("caller-run");
+      expect(persisted).not.toContain("caller-session");
+      expect(persisted).not.toContain("schemaVersion");
     } finally {
       await requestDaemonShutdown(connection);
     }

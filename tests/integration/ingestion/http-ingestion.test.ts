@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { requestDaemonShutdown } from "../../../src/cli/daemon-client";
@@ -39,13 +39,19 @@ describe("HTTP ingestion", () => {
         ingestUrl: string;
         sessionId: string;
       };
+      const origin = `http://${connection.host}:${connection.port}`;
+      expect(created.ingestUrl).toBe(`${origin}/ingest/${created.sessionId}`);
 
       const ingestResponse = await fetch(created.ingestUrl, {
         body: JSON.stringify({
           data: { subtotal: 9_000 },
           hypothesisId: "H1",
+          id: "caller-controlled",
           location: "src/cart.ts:84",
           message: "Before discount calculation",
+          runId: "caller-run",
+          schemaVersion: 99,
+          sessionId: "caller-session",
           timestamp: 1_784_310_000_123,
         }),
         headers: { "Content-Type": "application/json" },
@@ -66,6 +72,14 @@ describe("HTTP ingestion", () => {
           timestamp: 1_784_310_000_123,
         },
       ]);
+      const persisted = await readFile(
+        (await Persistence.open(home)).sessionFile(created.sessionId, "events.ndjson"),
+        "utf8",
+      );
+      expect(persisted).not.toContain("caller-controlled");
+      expect(persisted).not.toContain("caller-run");
+      expect(persisted).not.toContain("caller-session");
+      expect(persisted).not.toContain("schemaVersion");
     } finally {
       await requestDaemonShutdown(connection);
     }
@@ -166,6 +180,57 @@ describe("HTTP ingestion", () => {
           message: "Existing probe after fix",
         }),
       ]);
+    } finally {
+      await requestDaemonShutdown(connection);
+    }
+  });
+
+  test("rejects obsolete and unknown ingestion routes without retargeting", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-home-"));
+    temporaryDirectories.push(home);
+    const connection = await ensureDaemon({ homeDirectory: home });
+    const origin = `http://${connection.host}:${connection.port}`;
+    const raw = {
+      data: { value: 42 },
+      hypothesisId: "free-form-label",
+      location: "src/example.ts:1",
+      message: "Observed value",
+      timestamp: 1_784_310_000_001,
+    };
+
+    try {
+      const obsolete = await fetch(`${origin}/v1/ingest/not-a-session`, {
+        body: JSON.stringify(raw),
+        headers: {
+          Authorization: `Bearer ${connection.controlToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+      expect(obsolete.status).toBe(404);
+
+      const unknown = await fetch(`${origin}/ingest/not-a-session`, {
+        body: JSON.stringify(raw),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      expect(unknown.status).toBe(404);
+      expect(await unknown.json()).toEqual({ code: "SESSION_NOT_FOUND" });
+
+      const unknownMalformed = await fetch(`${origin}/ingest/not-a-session`, {
+        body: "{not-json\n",
+        headers: { "Content-Type": "application/x-ndjson" },
+        method: "POST",
+      });
+      expect(unknownMalformed.status).toBe(404);
+      expect(await unknownMalformed.json()).toEqual({ code: "SESSION_NOT_FOUND" });
+
+      const malformed = await fetch(`${origin}/ingest/%2e%2e%2fnot-a-session`, {
+        body: JSON.stringify(raw),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      expect(malformed.status).toBe(404);
     } finally {
       await requestDaemonShutdown(connection);
     }

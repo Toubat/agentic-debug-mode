@@ -43,6 +43,12 @@ export class IngestionService {
     private readonly sequence: EventSequence,
   ) {}
 
+  async hasSession(sessionId: string): Promise<boolean> {
+    return this.events.runSessionOperation(sessionId, async () =>
+      Boolean(await this.sessions.get(sessionId)),
+    );
+  }
+
   async recordInvalidJson(sessionId: string, message: string): Promise<boolean> {
     return this.events.runSessionOperation(sessionId, async () => {
       const session = await this.sessions.get(sessionId);
@@ -90,9 +96,11 @@ export class IngestApi {
   constructor(private readonly ingestion: IngestionService) {}
 
   async handle(request: Request, pathname: string): Promise<Response | undefined> {
-    const match = /^\/v1\/ingest\/([a-zA-Z0-9_-]+)$/.exec(pathname);
+    const match = /^\/ingest\/([a-zA-Z0-9_-]+)$/.exec(pathname);
     if (!match) {
-      return undefined;
+      return pathname.startsWith("/ingest/")
+        ? Response.json({ error: "not-found" }, { status: 404 })
+        : undefined;
     }
     const sessionId = match[1];
     if (!sessionId) {
@@ -107,6 +115,12 @@ export class IngestApi {
     }
     if (request.method !== "POST") {
       return Response.json({ error: "method-not-allowed" }, { status: 405 });
+    }
+    if (!(await this.ingestion.hasSession(sessionId))) {
+      return Response.json(
+        { code: "SESSION_NOT_FOUND" },
+        { headers: corsHeaders(origin), status: 404 },
+      );
     }
 
     const text = await request.text();
@@ -152,7 +166,10 @@ export class IngestApi {
     for (const value of values) {
       const result = await this.ingestion.ingest(sessionId, value);
       if (result === "not-found") {
-        return Response.json({ error: "not-found" }, { headers: corsHeaders(origin), status: 404 });
+        return Response.json(
+          { code: "SESSION_NOT_FOUND" },
+          { headers: corsHeaders(origin), status: 404 },
+        );
       }
       if (result === "accepted") {
         accepted += 1;

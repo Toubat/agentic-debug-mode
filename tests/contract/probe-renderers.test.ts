@@ -3,7 +3,7 @@ import { renderProbe } from "../../src/probes/render";
 
 const context = {
   ingestPath: "/tmp/incoming.ndjson",
-  ingestUrl: "http://127.0.0.1:4321/v1/ingest/capability",
+  ingestUrl: "http://127.0.0.1:4321/ingest/session-1",
   runId: "baseline",
   sessionId: "session-1",
 };
@@ -17,6 +17,9 @@ describe("probe renderers", () => {
     expect(probe.helperTemplate).toContain("// #region agent log");
     expect(probe.helperTemplate).toContain("fetch(");
     expect(probe.helperTemplate).not.toContain("event:");
+    expect(probe.helperTemplate).not.toContain("schemaVersion");
+    expect(probe.helperTemplate).not.toContain("sessionId");
+    expect(probe.helperTemplate).not.toContain("runId");
     expect(probe.callTemplate).toContain("__DATA_EXPRESSION__");
   });
 
@@ -29,6 +32,9 @@ describe("probe renderers", () => {
     expect(probe.helperTemplate).toContain(JSON.stringify(context.ingestPath));
     expect(probe.helperTemplate).toContain("16_384");
     expect(probe.helperTemplate).toContain("os.write");
+    expect(probe.helperTemplate).not.toContain("schemaVersion");
+    expect(probe.helperTemplate).not.toContain("sessionId");
+    expect(probe.helperTemplate).not.toContain("runId");
     expect(probe.callTemplate).toContain("__DATA_EXPRESSION__");
   });
 

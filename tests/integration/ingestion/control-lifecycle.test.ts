@@ -63,7 +63,7 @@ describe("control API lifecycle", () => {
       };
       expect(created).toEqual({
         appendPath: expect.stringContaining("incoming.ndjson"),
-        ingestUrl: `${origin}/v1/ingest/${created.sessionId}`,
+        ingestUrl: `${origin}/ingest/${created.sessionId}`,
         sessionId: expect.any(String),
       });
 

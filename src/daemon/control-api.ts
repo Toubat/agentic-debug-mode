@@ -73,7 +73,7 @@ export class ControlApi {
       }
       return Response.json({
         ingestPath: this.sessions.incomingPath(session.id),
-        ingestUrl: `${origin}/v1/ingest/${session.id}`,
+        ingestUrl: `${origin}/ingest/${session.id}`,
         sessionId: session.id,
       });
     }
@@ -155,7 +155,7 @@ export class ControlApi {
       return Response.json(
         {
           appendPath: this.sessions.incomingPath(session.id),
-          ingestUrl: `${origin}/v1/ingest/${session.id}`,
+          ingestUrl: `${origin}/ingest/${session.id}`,
           sessionId: session.id,
         },
         { status: 201 },
@@ -170,7 +170,7 @@ export class ControlApi {
       }
       return Response.json({
         appendPath: this.sessions.incomingPath(session.id),
-        ingestUrl: `${origin}/v1/ingest/${session.id}`,
+        ingestUrl: `${origin}/ingest/${session.id}`,
         sessionId: session.id,
       });
     }
