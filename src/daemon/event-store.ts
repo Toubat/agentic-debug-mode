@@ -19,6 +19,11 @@ export interface EventPage {
   watermark: number;
 }
 
+export interface EventSummary {
+  eventCount: number;
+  watermark: number;
+}
+
 export class EventStore {
   private readonly knownIds = new Map<string, Set<string>>();
 
@@ -70,6 +75,32 @@ export class EventStore {
 
   async read(sessionId: string): Promise<NormalizedEvent[]> {
     return this.runSessionOperation(sessionId, () => this.readFile(sessionId));
+  }
+
+  async summarize(sessionId: string): Promise<EventSummary> {
+    return this.runSessionOperation(sessionId, async () => {
+      let eventCount = 0;
+      let watermark = 0;
+      const lines = createInterface({
+        crlfDelay: Number.POSITIVE_INFINITY,
+        input: createReadStream(this.persistence.sessionFile(sessionId, "events.ndjson"), {
+          encoding: "utf8",
+        }),
+      });
+      for await (const line of lines) {
+        if (!line) {
+          continue;
+        }
+        try {
+          const event = JSON.parse(line) as NormalizedEvent;
+          eventCount += 1;
+          watermark = Math.max(watermark, event.sequence);
+        } catch {
+          // Native query execution reports canonical corruption with its stable typed marker.
+        }
+      }
+      return { eventCount, watermark };
+    });
   }
 
   async readPage(sessionId: string, options: EventPageOptions): Promise<EventPage> {

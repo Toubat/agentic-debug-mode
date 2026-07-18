@@ -3,25 +3,75 @@ use jaq_core::{Ctx, Vars, data, unwrap_valr};
 use jaq_json::{Val, read};
 use napi::bindgen_prelude::Result;
 use napi_derive::napi;
-use std::fs::File as FsFile;
-use std::io::{BufRead, BufReader};
+use std::fs::{File as FsFile, OpenOptions, remove_file, rename};
+use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 const QUERY_TIMEOUT_RESPONSE: &str = r#"{"ok":false,"error":{"code":"QUERY_TIMEOUT"}}"#;
+const EVIDENCE_MALFORMED_CODE: &str = "EVIDENCE_MALFORMED";
+const QUERY_SPOOL_UNAVAILABLE_CODE: &str = "QUERY_SPOOL_UNAVAILABLE";
 
 fn query_error(message: impl std::fmt::Debug) -> napi::Error {
     napi::Error::from_reason(format!("{message:?}"))
 }
 
 enum QueryExecutionError {
+    EvidenceMalformed(String),
     Query(napi::Error),
+    Resource(String),
     Timeout,
 }
 
 impl From<napi::Error> for QueryExecutionError {
     fn from(error: napi::Error) -> Self {
         Self::Query(error)
+    }
+}
+
+struct QueryPage {
+    results: Vec<String>,
+    scanned_records: u64,
+    produced_values: u64,
+    next_byte_offset: Option<u64>,
+    next_output_ordinal: Option<u64>,
+}
+
+impl QueryPage {
+    fn to_json(&self) -> String {
+        let returned_records = self.results.len();
+        let next_byte_offset = self
+            .next_byte_offset
+            .map_or_else(|| "null".to_owned(), |value| value.to_string());
+        let next_output_ordinal = self
+            .next_output_ordinal
+            .map_or_else(|| "null".to_owned(), |value| value.to_string());
+        format!(
+            "{{\"results\":[{}],\"scannedRecords\":{},\"producedValues\":{},\"returnedRecords\":{returned_records},\"nextByteOffset\":{next_byte_offset},\"nextOutputOrdinal\":{next_output_ordinal}}}",
+            self.results.join(","),
+            self.scanned_records,
+            self.produced_values,
+        )
+    }
+}
+
+fn typed_error_response(code: &str, message: &str) -> String {
+    serde_json::json!({ "error": { "code": code, "message": message }, "ok": false }).to_string()
+}
+
+fn finish_page(
+    results: Vec<String>,
+    scanned_records: u64,
+    produced_values: u64,
+    byte_offset: u64,
+    output_ordinal: Option<u64>,
+) -> QueryPage {
+    QueryPage {
+        results,
+        scanned_records,
+        produced_values,
+        next_byte_offset: Some(byte_offset),
+        next_output_ordinal: output_ordinal,
     }
 }
 
@@ -197,15 +247,19 @@ pub fn run_jaq_file_page(
     path: String,
     hypotheses_json: String,
     watermark: f64,
-    offset: f64,
+    byte_offset: f64,
+    output_ordinal: f64,
     limit: f64,
-    slurp: bool,
     timeout_ms: f64,
 ) -> Result<String> {
-    if !offset.is_finite()
-        || offset < 0.0
-        || offset.fract() != 0.0
-        || offset > 9_007_199_254_740_991.0
+    if !byte_offset.is_finite()
+        || byte_offset < 0.0
+        || byte_offset.fract() != 0.0
+        || byte_offset > 9_007_199_254_740_991.0
+        || !output_ordinal.is_finite()
+        || output_ordinal < 0.0
+        || output_ordinal.fract() != 0.0
+        || output_ordinal > 9_007_199_254_740_991.0
         || !limit.is_finite()
         || limit < 1.0
         || limit.fract() != 0.0
@@ -216,37 +270,43 @@ pub fn run_jaq_file_page(
         || timeout_ms > 9_007_199_254_740_991.0
     {
         return Err(napi::Error::from_reason(
-            "Query offset, limit, and timeout must be safe integers in their valid ranges"
+            "Query continuation, limit, and timeout must be safe integers in their valid ranges"
                 .to_owned(),
         ));
     }
-    match run_jaq_file_page_with_deadline(
+    match run_streaming_page(
         program,
         path,
         hypotheses_json,
         watermark,
-        offset as u64,
+        byte_offset as u64,
+        output_ordinal as u64,
         limit as u64,
-        slurp,
         timeout_ms as u64,
     ) {
-        Ok(output) => Ok(output),
+        Ok(page) => Ok(page.to_json()),
         Err(QueryExecutionError::Timeout) => Ok(QUERY_TIMEOUT_RESPONSE.to_owned()),
+        Err(QueryExecutionError::EvidenceMalformed(message)) => {
+            Ok(typed_error_response(EVIDENCE_MALFORMED_CODE, &message))
+        }
+        Err(QueryExecutionError::Resource(message)) => {
+            Ok(typed_error_response(QUERY_SPOOL_UNAVAILABLE_CODE, &message))
+        }
         Err(QueryExecutionError::Query(error)) => Err(error),
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_jaq_file_page_with_deadline(
+fn run_streaming_page(
     program: String,
     path: String,
     hypotheses_json: String,
     watermark: f64,
-    offset: u64,
+    byte_offset: u64,
+    output_ordinal: u64,
     limit: u64,
-    slurp: bool,
     timeout_ms: u64,
-) -> std::result::Result<String, QueryExecutionError> {
+) -> std::result::Result<QueryPage, QueryExecutionError> {
     let deadline = QueryDeadline::new(timeout_ms)?;
     deadline.check()?;
     let hypotheses: Vec<String> = serde_json::from_str(&hypotheses_json).map_err(query_error)?;
@@ -270,27 +330,74 @@ fn run_jaq_file_page_with_deadline(
         .map_err(query_error)?;
     deadline.check()?;
     let file = FsFile::open(path).map_err(query_error)?;
-    let reader = BufReader::new(file);
-    let mut inputs = Vec::new();
+    let mut reader = BufReader::new(file);
+    reader
+        .seek(SeekFrom::Start(byte_offset))
+        .map_err(query_error)?;
     let mut values = Vec::new();
-    let mut total_records = 0_u64;
     let mut scanned_records = 0_u64;
     let mut produced_values = 0_u64;
+    let mut line_start = byte_offset;
+    let mut first_input = true;
 
-    let mut collect_value = |value: Val| {
-        produced_values += 1;
-        if produced_values > offset && values.len() < limit as usize {
-            values.push(value.to_string());
+    loop {
+        if let Err(error) = deadline.check() {
+            if values.len() == limit as usize {
+                return Ok(finish_page(
+                    values,
+                    scanned_records,
+                    produced_values,
+                    line_start,
+                    Some(0),
+                ));
+            }
+            return Err(error);
         }
-    };
-
-    for line in reader.lines() {
-        deadline.check()?;
-        let line = line.map_err(query_error)?;
+        let mut line = String::new();
+        let bytes_read = match reader.read_line(&mut line) {
+            Ok(bytes_read) => bytes_read,
+            Err(error) => {
+                if values.len() == limit as usize {
+                    return Ok(finish_page(
+                        values,
+                        scanned_records,
+                        produced_values,
+                        line_start,
+                        Some(0),
+                    ));
+                }
+                return Err(QueryExecutionError::EvidenceMalformed(format!(
+                    "Canonical evidence could not be read: {error}"
+                )));
+            }
+        };
+        if bytes_read == 0 {
+            break;
+        }
+        let next_line_start = line_start + bytes_read as u64;
+        let line = line.trim_end_matches(['\r', '\n']);
         if line.is_empty() {
+            line_start = next_line_start;
+            first_input = false;
             continue;
         }
-        let scope: serde_json::Value = serde_json::from_str(&line).map_err(query_error)?;
+        let scope: serde_json::Value = match serde_json::from_str(line) {
+            Ok(scope) => scope,
+            Err(error) => {
+                if values.len() == limit as usize {
+                    return Ok(finish_page(
+                        values,
+                        scanned_records,
+                        produced_values,
+                        line_start,
+                        Some(0),
+                    ));
+                }
+                return Err(QueryExecutionError::EvidenceMalformed(format!(
+                    "Canonical evidence contains invalid NDJSON: {error}"
+                )));
+            }
+        };
         let hypothesis = scope
             .get("hypothesisId")
             .and_then(serde_json::Value::as_str);
@@ -301,61 +408,334 @@ fn run_jaq_file_page_with_deadline(
         let matches_hypothesis = hypotheses.is_empty()
             || hypothesis.is_some_and(|id| hypotheses.iter().any(|h| h == id));
         if sequence > watermark {
+            line_start = next_line_start;
+            first_input = false;
             continue;
         }
-        total_records += 1;
         if !matches_hypothesis {
+            line_start = next_line_start;
+            first_input = false;
             continue;
         }
         scanned_records += 1;
-        let input = read::parse_single(line.as_bytes()).map_err(query_error)?;
-        deadline.check()?;
-        if slurp {
-            inputs.push(input);
-            continue;
-        }
+        let input = read::parse_single(line.as_bytes()).map_err(|error| {
+            QueryExecutionError::EvidenceMalformed(format!(
+                "Canonical evidence contains an invalid value: {error:?}"
+            ))
+        })?;
         let ctx = Ctx::<data::JustLut<Val>>::new(&filter.lut, Vars::new([]));
         let mut outputs = filter.id.run((ctx, input)).map(unwrap_valr);
+        let skip_outputs = if first_input { output_ordinal } else { 0 };
+        let mut ordinal = 0_u64;
         loop {
-            deadline.check()?;
+            if let Err(error) = deadline.check() {
+                if values.len() == limit as usize {
+                    return Ok(finish_page(
+                        values,
+                        scanned_records,
+                        produced_values,
+                        line_start,
+                        Some(ordinal),
+                    ));
+                }
+                return Err(error);
+            }
             // jaq-core 3.1.0 exposes no interrupt or fuel hook. A single `next()` evaluation
             // cannot be preempted; the deadline is enforced immediately before and after it.
-            let Some(result) = outputs.next() else {
-                break;
+            let result = match outputs.next() {
+                Some(result) => result,
+                None => break,
             };
-            deadline.check()?;
-            collect_value(result.map_err(query_error)?);
+            if let Err(error) = deadline.check() {
+                if values.len() == limit as usize {
+                    return Ok(finish_page(
+                        values,
+                        scanned_records,
+                        produced_values,
+                        line_start,
+                        Some(ordinal),
+                    ));
+                }
+                return Err(error);
+            }
+            let value = match result {
+                Ok(value) => value,
+                Err(error) => {
+                    if values.len() == limit as usize {
+                        return Ok(finish_page(
+                            values,
+                            scanned_records,
+                            produced_values,
+                            line_start,
+                            Some(ordinal),
+                        ));
+                    }
+                    return Err(query_error(error).into());
+                }
+            };
+            if ordinal < skip_outputs {
+                ordinal += 1;
+                continue;
+            }
+            produced_values += 1;
+            if values.len() == limit as usize {
+                return Ok(finish_page(
+                    values,
+                    scanned_records,
+                    produced_values,
+                    line_start,
+                    Some(ordinal),
+                ));
+            }
+            values.push(value.to_string());
+            ordinal += 1;
         }
+        line_start = next_line_start;
+        first_input = false;
     }
+    Ok(QueryPage {
+        results: values,
+        scanned_records,
+        produced_values,
+        next_byte_offset: None,
+        next_output_ordinal: None,
+    })
+}
 
-    if slurp {
+#[napi]
+pub fn run_jaq_slurp_page(
+    program: String,
+    path: String,
+    hypotheses_json: String,
+    watermark: f64,
+    spool_path: String,
+    spool_byte_offset: f64,
+    limit: f64,
+    timeout_ms: f64,
+) -> Result<String> {
+    if !spool_byte_offset.is_finite()
+        || spool_byte_offset < 0.0
+        || spool_byte_offset.fract() != 0.0
+        || spool_byte_offset > 9_007_199_254_740_991.0
+        || !limit.is_finite()
+        || limit < 1.0
+        || limit.fract() != 0.0
+        || limit > 9_007_199_254_740_991.0
+        || !timeout_ms.is_finite()
+        || timeout_ms < 1.0
+        || timeout_ms.fract() != 0.0
+        || timeout_ms > 9_007_199_254_740_991.0
+    {
+        return Err(napi::Error::from_reason(
+            "Slurp continuation, limit, and timeout must be safe integers in their valid ranges"
+                .to_owned(),
+        ));
+    }
+    match run_slurp_page(
+        program,
+        path,
+        hypotheses_json,
+        watermark,
+        spool_path,
+        spool_byte_offset as u64,
+        limit as u64,
+        timeout_ms as u64,
+    ) {
+        Ok(page) => Ok(page.to_json()),
+        Err(QueryExecutionError::Timeout) => Ok(QUERY_TIMEOUT_RESPONSE.to_owned()),
+        Err(QueryExecutionError::EvidenceMalformed(message)) => {
+            Ok(typed_error_response(EVIDENCE_MALFORMED_CODE, &message))
+        }
+        Err(QueryExecutionError::Resource(message)) => {
+            Ok(typed_error_response(QUERY_SPOOL_UNAVAILABLE_CODE, &message))
+        }
+        Err(QueryExecutionError::Query(error)) => Err(error),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_slurp_page(
+    program: String,
+    path: String,
+    hypotheses_json: String,
+    watermark: f64,
+    spool_path: String,
+    spool_byte_offset: u64,
+    limit: u64,
+    timeout_ms: u64,
+) -> std::result::Result<QueryPage, QueryExecutionError> {
+    let deadline = QueryDeadline::new(timeout_ms)?;
+    let mut scanned_records = 0_u64;
+    if !std::path::Path::new(&spool_path).exists() {
+        let hypotheses: Vec<String> =
+            serde_json::from_str(&hypotheses_json).map_err(query_error)?;
+        let source = File {
+            code: program.as_str(),
+            path: (),
+        };
+        let defs = jaq_core::defs()
+            .chain(jaq_std::defs())
+            .chain(jaq_json::defs());
+        let funs = jaq_core::funs()
+            .chain(jaq_std::funs())
+            .chain(jaq_json::funs());
+        let loader = Loader::new(defs);
+        let arena = Arena::default();
+        let modules = loader.load(&arena, source).map_err(query_error)?;
+        deadline.check()?;
+        let filter = jaq_core::Compiler::default()
+            .with_funs(funs)
+            .compile(modules)
+            .map_err(query_error)?;
+        deadline.check()?;
+        let file = FsFile::open(path).map_err(query_error)?;
+        let reader = BufReader::new(file);
+        let mut inputs = Vec::new();
+        for line in reader.lines() {
+            deadline.check()?;
+            let line = line.map_err(|error| {
+                QueryExecutionError::EvidenceMalformed(format!(
+                    "Canonical evidence could not be read: {error}"
+                ))
+            })?;
+            if line.is_empty() {
+                continue;
+            }
+            let scope: serde_json::Value = serde_json::from_str(&line).map_err(|error| {
+                QueryExecutionError::EvidenceMalformed(format!(
+                    "Canonical evidence contains invalid NDJSON: {error}"
+                ))
+            })?;
+            let hypothesis = scope
+                .get("hypothesisId")
+                .and_then(serde_json::Value::as_str);
+            let sequence = scope
+                .get("sequence")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(f64::INFINITY);
+            let matches_hypothesis = hypotheses.is_empty()
+                || hypothesis.is_some_and(|id| hypotheses.iter().any(|h| h == id));
+            if sequence > watermark || !matches_hypothesis {
+                continue;
+            }
+            scanned_records += 1;
+            inputs.push(read::parse_single(line.as_bytes()).map_err(|error| {
+                QueryExecutionError::EvidenceMalformed(format!(
+                    "Canonical evidence contains an invalid value: {error:?}"
+                ))
+            })?);
+        }
         deadline.check()?;
         let ctx = Ctx::<data::JustLut<Val>>::new(&filter.lut, Vars::new([]));
         let mut outputs = filter
             .id
             .run((ctx, Val::Arr(Rc::new(inputs))))
             .map(unwrap_valr);
-        loop {
-            deadline.check()?;
-            let Some(result) = outputs.next() else {
-                break;
-            };
-            deadline.check()?;
-            collect_value(result.map_err(query_error)?);
+        let temporary_path = format!("{spool_path}.{}.tmp", std::process::id());
+        let mut options = OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut spool = options.open(&temporary_path).map_err(|error| {
+            QueryExecutionError::Resource(format!("Query spool could not be created: {error}"))
+        })?;
+        let write_result = (|| -> std::result::Result<(), QueryExecutionError> {
+            loop {
+                deadline.check()?;
+                let Some(result) = outputs.next() else {
+                    break;
+                };
+                deadline.check()?;
+                let value = result.map_err(query_error)?;
+                writeln!(spool, "{value}").map_err(|error| {
+                    QueryExecutionError::Resource(format!(
+                        "Query spool could not be written: {error}"
+                    ))
+                })?;
+            }
+            spool.sync_all().map_err(|error| {
+                QueryExecutionError::Resource(format!("Query spool could not be synced: {error}"))
+            })
+        })();
+        drop(spool);
+        if let Err(error) = write_result {
+            let _ = remove_file(&temporary_path);
+            return Err(error);
+        }
+        if let Err(error) = rename(&temporary_path, &spool_path) {
+            let _ = remove_file(&temporary_path);
+            return Err(QueryExecutionError::Resource(format!(
+                "Query spool could not be finalized: {error}"
+            )));
         }
     }
-    deadline.check()?;
-    let returned_records = values.len();
-    let has_next = produced_values > offset + returned_records as u64;
-    Ok(format!(
-        "{{\"results\":[{}],\"scannedRecords\":{scanned_records},\"totalRecords\":{total_records},\"producedValues\":{produced_values},\"returnedRecords\":{returned_records},\"hasNext\":{has_next}}}",
-        values.join(",")
-    ))
+    read_spool_page(
+        &spool_path,
+        spool_byte_offset,
+        limit,
+        scanned_records,
+        &deadline,
+    )
+}
+
+fn read_spool_page(
+    spool_path: &str,
+    byte_offset: u64,
+    limit: u64,
+    scanned_records: u64,
+    deadline: &QueryDeadline,
+) -> std::result::Result<QueryPage, QueryExecutionError> {
+    let file = FsFile::open(spool_path).map_err(|error| {
+        QueryExecutionError::Resource(format!("Query spool is unavailable: {error}"))
+    })?;
+    let mut reader = BufReader::new(file);
+    reader.seek(SeekFrom::Start(byte_offset)).map_err(|error| {
+        QueryExecutionError::Resource(format!("Query spool continuation is invalid: {error}"))
+    })?;
+    let mut results = Vec::new();
+    let mut produced_values = 0_u64;
+    let mut line_start = byte_offset;
+    loop {
+        deadline.check()?;
+        let mut line = String::new();
+        let bytes_read = reader.read_line(&mut line).map_err(|error| {
+            QueryExecutionError::Resource(format!("Query spool could not be read: {error}"))
+        })?;
+        if bytes_read == 0 {
+            break;
+        }
+        let value = line.trim_end_matches(['\r', '\n']);
+        serde_json::from_str::<serde_json::Value>(value).map_err(|error| {
+            QueryExecutionError::Resource(format!("Query spool contains invalid data: {error}"))
+        })?;
+        produced_values += 1;
+        if results.len() == limit as usize {
+            return Ok(finish_page(
+                results,
+                scanned_records,
+                produced_values,
+                line_start,
+                None,
+            ));
+        }
+        results.push(value.to_owned());
+        line_start += bytes_read as u64;
+    }
+    Ok(QueryPage {
+        results,
+        scanned_records,
+        produced_values,
+        next_byte_offset: None,
+        next_output_ordinal: None,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{run_jaq_batch, run_jaq_file, run_jaq_file_page};
+    use super::{run_jaq_batch, run_jaq_file, run_jaq_file_page, run_jaq_slurp_page};
     use std::fs;
 
     #[test]
@@ -458,22 +838,45 @@ mod tests {
         )
         .unwrap();
 
-        let output = run_jaq_file_page(
-            ".id".to_owned(),
+        let program = r#"if .id == "x" then error("replayed") else .id end"#;
+        let first = run_jaq_file_page(
+            program.to_owned(),
             path.to_string_lossy().into_owned(),
             "[]".to_owned(),
             3.0,
+            0.0,
+            0.0,
             1.0,
+            1_000.0,
+        )
+        .unwrap();
+        let first_page: serde_json::Value = serde_json::from_str(&first).unwrap();
+        fs::write(
+            &path,
+            concat!(
+                "{\"id\":\"x\",\"hypothesisId\":\"H1\",\"sequence\":1}\n",
+                "{\"id\":\"b\",\"hypothesisId\":\"H1\",\"sequence\":2}\n",
+                "{\"id\":\"c\",\"hypothesisId\":\"H1\",\"sequence\":3}\n"
+            ),
+        )
+        .unwrap();
+        let second = run_jaq_file_page(
+            program.to_owned(),
+            path.to_string_lossy().into_owned(),
+            "[]".to_owned(),
+            3.0,
+            first_page["nextByteOffset"].as_u64().unwrap() as f64,
+            first_page["nextOutputOrdinal"].as_u64().unwrap() as f64,
             1.0,
-            false,
             1_000.0,
         )
         .unwrap();
         fs::remove_file(path).unwrap();
 
+        assert_eq!(first_page["results"], serde_json::json!(["a"]));
         assert_eq!(
-            output,
-            r#"{"results":["b"],"scannedRecords":3,"totalRecords":3,"producedValues":3,"returnedRecords":1,"hasNext":true}"#
+            serde_json::from_str::<serde_json::Value>(&second).unwrap()["results"],
+            serde_json::json!(["b"])
         );
     }
 
@@ -490,18 +893,130 @@ mod tests {
         .unwrap();
 
         let output = run_jaq_file_page(
-            "range(0; 100000)".to_owned(),
+            "[range(0; 100000)]".to_owned(),
             path.to_string_lossy().into_owned(),
             "[]".to_owned(),
             1.0,
             0.0,
+            0.0,
             10.0,
-            false,
             1.0,
         )
         .unwrap();
         fs::remove_file(path).unwrap();
 
         assert_eq!(output, super::QUERY_TIMEOUT_RESPONSE);
+    }
+
+    #[test]
+    fn completed_page_defers_a_later_runtime_error() {
+        let path = std::env::temp_dir().join(format!(
+            "agentic-debug-mode-query-late-error-{}.ndjson",
+            std::process::id()
+        ));
+        fs::write(
+            &path,
+            concat!(
+                "{\"id\":\"first\",\"hypothesisId\":\"H1\",\"sequence\":1}\n",
+                "{\"id\":\"bad\",\"hypothesisId\":\"H1\",\"sequence\":2}\n"
+            ),
+        )
+        .unwrap();
+
+        let output = run_jaq_file_page(
+            r#"if .id == "bad" then error("late") else .id end"#.to_owned(),
+            path.to_string_lossy().into_owned(),
+            "[]".to_owned(),
+            2.0,
+            0.0,
+            0.0,
+            1.0,
+            1_000.0,
+        )
+        .unwrap();
+        fs::remove_file(path).unwrap();
+
+        let page: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(page["results"], serde_json::json!(["first"]));
+        assert_eq!(page["returnedRecords"], 1);
+        assert!(page["nextByteOffset"].is_number());
+        assert_eq!(page["nextOutputOrdinal"], 0);
+    }
+
+    #[test]
+    fn slurp_continuation_reads_the_private_spool_without_reevaluation() {
+        let base = std::env::temp_dir().join(format!(
+            "agentic-debug-mode-query-slurp-{}",
+            std::process::id()
+        ));
+        let path = base.with_extension("ndjson");
+        let spool = base.with_extension("spool");
+        fs::write(
+            &path,
+            concat!(
+                "{\"id\":\"a\",\"hypothesisId\":\"H1\",\"sequence\":1}\n",
+                "{\"id\":\"b\",\"hypothesisId\":\"H1\",\"sequence\":2}\n"
+            ),
+        )
+        .unwrap();
+
+        let first = run_jaq_slurp_page(
+            ".[] | .id".to_owned(),
+            path.to_string_lossy().into_owned(),
+            "[]".to_owned(),
+            2.0,
+            spool.to_string_lossy().into_owned(),
+            0.0,
+            1.0,
+            1_000.0,
+        )
+        .unwrap();
+        let first_page: serde_json::Value = serde_json::from_str(&first).unwrap();
+        let second = run_jaq_slurp_page(
+            "error(\"must not reevaluate\")".to_owned(),
+            path.to_string_lossy().into_owned(),
+            "[]".to_owned(),
+            2.0,
+            spool.to_string_lossy().into_owned(),
+            first_page["nextByteOffset"].as_u64().unwrap() as f64,
+            1.0,
+            1_000.0,
+        )
+        .unwrap();
+        fs::remove_file(path).unwrap();
+        fs::remove_file(spool).unwrap();
+
+        assert_eq!(first_page["results"], serde_json::json!(["a"]));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&second).unwrap()["results"],
+            serde_json::json!(["b"])
+        );
+    }
+
+    #[test]
+    fn returns_typed_evidence_error_for_canonical_ndjson_corruption() {
+        let path = std::env::temp_dir().join(format!(
+            "agentic-debug-mode-query-malformed-{}.ndjson",
+            std::process::id()
+        ));
+        fs::write(&path, "{not-json}\n").unwrap();
+
+        let output = run_jaq_file_page(
+            ".".to_owned(),
+            path.to_string_lossy().into_owned(),
+            "[]".to_owned(),
+            0.0,
+            0.0,
+            0.0,
+            10.0,
+            1_000.0,
+        )
+        .unwrap();
+        fs::remove_file(path).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&output).unwrap()["error"]["code"],
+            super::EVIDENCE_MALFORMED_CODE
+        );
     }
 }

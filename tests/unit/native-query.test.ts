@@ -24,7 +24,7 @@ describe("native query binding", () => {
   test("returns query results through the direct N-API wrapper", async () => {
     const path = await eventsFile();
 
-    const result = runJaqFilePage(".id", path, [], 1, 0, 10, false, 1_000);
+    const result = runJaqFilePage(".id", path, [], 1, 0, 0, 10, 1_000);
 
     expect(result.results).toEqual(["direct"]);
   });
@@ -32,7 +32,7 @@ describe("native query binding", () => {
   test("maps the native deadline marker to QueryTimeoutError", async () => {
     const path = await eventsFile();
 
-    expect(() => runJaqFilePage("range(0; 100000)", path, [], 1, 0, 10, false, 1)).toThrow(
+    expect(() => runJaqFilePage("[range(0; 100000)]", path, [], 1, 0, 0, 10, 1)).toThrow(
       QueryTimeoutError,
     );
   });

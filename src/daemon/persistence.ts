@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { lstat } from "node:fs/promises";
+import { lstat, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { ensurePrivateDirectory } from "../platform/permissions";
 import { initializeStateRoot } from "../platform/state-root";
@@ -40,6 +40,24 @@ export class Persistence {
       throw new Error(`Invalid session filename: ${filename}`);
     }
     return join(this.sessionDirectory(sessionId), filename);
+  }
+
+  querySpoolFile(sessionId: string, spoolId: string): string {
+    if (!SAFE_ID.test(spoolId)) {
+      throw new Error(`Invalid query spool ID: ${spoolId}`);
+    }
+    return join(this.sessionDirectory(sessionId), "query-spools", `${spoolId}.ndjson`);
+  }
+
+  async initializeQuerySpoolDirectory(sessionId: string): Promise<void> {
+    await ensurePrivateDirectory(join(this.sessionDirectory(sessionId), "query-spools"));
+  }
+
+  async clearQuerySpools(sessionId: string): Promise<void> {
+    await rm(join(this.sessionDirectory(sessionId), "query-spools"), {
+      force: true,
+      recursive: true,
+    });
   }
 
   async initializeSessionDirectory(sessionId: string): Promise<string> {

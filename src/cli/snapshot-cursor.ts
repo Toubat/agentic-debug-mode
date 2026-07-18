@@ -6,12 +6,36 @@ export interface SnapshotCursorPayload {
   watermark: number;
 }
 
+export type QueryContinuation =
+  | {
+      byteOffset: number;
+      kind: "stream";
+      outputOrdinal: number;
+    }
+  | {
+      byteOffset: number;
+      kind: "spool";
+      spoolId: string;
+    };
+
 export interface QueryCursorPayload extends SnapshotCursorPayload {
+  continuation: QueryContinuation;
+  evidenceEpoch: string;
   hypotheses: string[];
+  json: boolean;
   limit: number;
-  offset: number;
   program: string;
   slurp: boolean;
+  timeoutMs: number;
+}
+
+export class QueryCursorStaleError extends Error {
+  readonly code = "CURSOR_STALE";
+
+  constructor() {
+    super("Query cursor is stale because the session evidence was reset.");
+    this.name = "QueryCursorStaleError";
+  }
 }
 
 function signature(secret: string, payload: string): string {
@@ -78,7 +102,7 @@ export function createQueryCursor(secret: string, payload: QueryCursorPayload): 
 export function verifyQueryCursor(
   secret: string,
   cursor: string,
-  scope: Pick<QueryCursorPayload, "sessionId">,
+  scope: Pick<QueryCursorPayload, "evidenceEpoch" | "sessionId">,
 ): QueryCursorPayload {
   const parts = cursor.split(".");
   const encoded = parts[0];
@@ -109,32 +133,69 @@ export function verifyQueryCursor(
     typeof payload.watermark !== "number" ||
     !Number.isSafeInteger(payload.watermark) ||
     payload.watermark < 0 ||
+    typeof payload.evidenceEpoch !== "string" ||
     typeof payload.limit !== "number" ||
     !Number.isSafeInteger(payload.limit) ||
     payload.limit < 1 ||
-    typeof payload.offset !== "number" ||
-    !Number.isSafeInteger(payload.offset) ||
-    payload.offset < 0 ||
+    typeof payload.timeoutMs !== "number" ||
+    !Number.isSafeInteger(payload.timeoutMs) ||
+    payload.timeoutMs < 1 ||
     typeof payload.program !== "string" ||
     payload.program.length < 1 ||
     payload.program.length > 4_096 ||
     typeof payload.slurp !== "boolean" ||
+    typeof payload.json !== "boolean" ||
     !Array.isArray(payload.hypotheses) ||
-    !payload.hypotheses.every((item) => typeof item === "string")
+    !payload.hypotheses.every((item) => typeof item === "string") ||
+    !isQueryContinuation(payload.continuation) ||
+    (payload.slurp && payload.continuation.kind !== "spool") ||
+    (!payload.slurp && payload.continuation.kind !== "stream")
   ) {
     throw new Error("Invalid query cursor");
   }
   if (payload.sessionId !== scope.sessionId) {
     throw new Error("Query cursor scope does not match");
   }
+  if (payload.evidenceEpoch !== scope.evidenceEpoch) {
+    throw new QueryCursorStaleError();
+  }
   return {
+    continuation: payload.continuation,
+    evidenceEpoch: payload.evidenceEpoch,
     hypotheses: payload.hypotheses as string[],
     issuedAt: payload.issuedAt,
+    json: payload.json,
     limit: payload.limit,
-    offset: payload.offset,
     program: payload.program,
     sessionId: payload.sessionId,
     slurp: payload.slurp,
+    timeoutMs: payload.timeoutMs,
     watermark: payload.watermark,
   };
+}
+
+function isQueryContinuation(value: unknown): value is QueryContinuation {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const continuation = value as Record<string, unknown>;
+  if (
+    typeof continuation.byteOffset !== "number" ||
+    !Number.isSafeInteger(continuation.byteOffset) ||
+    continuation.byteOffset < 0
+  ) {
+    return false;
+  }
+  if (continuation.kind === "stream") {
+    return (
+      typeof continuation.outputOrdinal === "number" &&
+      Number.isSafeInteger(continuation.outputOrdinal) &&
+      continuation.outputOrdinal >= 0
+    );
+  }
+  return (
+    continuation.kind === "spool" &&
+    typeof continuation.spoolId === "string" &&
+    /^[0-9a-f-]{36}$/.test(continuation.spoolId)
+  );
 }

@@ -88,12 +88,12 @@ export class ControlApi {
       }
       const diagnostics = await this.diagnostics.read(session.id);
       if (evidenceMatch[2] === "status") {
-        const events = await this.events.read(session.id);
+        const summary = await this.events.summarize(session.id);
         return Response.json({
           diagnostics,
-          eventCount: events.length,
+          eventCount: summary.eventCount,
           session,
-          watermark: events.reduce((maximum, event) => Math.max(maximum, event.sequence), 0),
+          watermark: summary.watermark,
         });
       }
       const url = new URL(request.url);

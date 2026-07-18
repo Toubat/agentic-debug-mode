@@ -1,0 +1,131 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`generated native query properties snapshots representative human-readable query shapes 1`] = `
+"=== homogeneous objects with warnings, statistics, and hints ===
+WARNING  [MALFORMED_RECORDS] 1 malformed records were excluded; run debug-mode status for diagnostics.
+WARNING  [SECRET_REDACTED] 1 events contained fields that were redacted.
+
+QUERY
+Session <SESSION_ID>
+durationMs        <DURATION_MS>
+malformedRecords  1
+mode              streaming
+producedValues    3
+returnedRecords   2
+scannedRecords    3
+totalRecords      5
+validRecords      4
+
+ID                 HYPOTHESISID
+generated-51a9e-1  H1
+generated-51a9e-2  H2
+
+STATUS  Inspect all evidence diagnostics.
+  debug-mode status --session <SESSION_ID>
+NEXT-PAGE  Continue the same query.
+  debug-mode query --session <SESSION_ID> --cursor <CURSOR> --limit 2 --timeout-ms 2000
+
+=== scalar table ===
+WARNING  [MALFORMED_RECORDS] 1 malformed records were excluded; run debug-mode status for diagnostics.
+WARNING  [SECRET_REDACTED] 1 events contained fields that were redacted.
+
+QUERY
+Session <SESSION_ID>
+durationMs        <DURATION_MS>
+malformedRecords  1
+mode              streaming
+producedValues    4
+returnedRecords   4
+scannedRecords    4
+totalRecords      5
+validRecords      4
+
+INDEX  VALUE
+1      "héllo 🌍"
+2      ""
+3      ""
+4      "quotes \\" and slash \\\\"
+
+STATUS  Inspect all evidence diagnostics.
+  debug-mode status --session <SESSION_ID>
+
+=== nested and heterogeneous JSON ===
+WARNING  [MALFORMED_RECORDS] 1 malformed records were excluded; run debug-mode status for diagnostics.
+WARNING  [SECRET_REDACTED] 1 events contained fields that were redacted.
+
+QUERY
+Session <SESSION_ID>
+durationMs        <DURATION_MS>
+malformedRecords  1
+mode              streaming
+producedValues    8
+returnedRecords   8
+scannedRecords    4
+totalRecords      5
+validRecords      4
+
+RESULT 1 OF 8
+{
+  "active": false,
+  "label": "line\\\\nbreak",
+  "optional": null,
+  "score": 0
+}
+RESULT 2 OF 8
+[
+  "",
+  "punctuation!?"
+]
+RESULT 3 OF 8
+{
+  "active": false,
+  "label": "héllo 🌍",
+  "optional": null,
+  "score": 0
+}
+RESULT 4 OF 8
+[
+  "alpha"
+]
+RESULT 5 OF 8
+{
+  "active": false,
+  "label": "",
+  "optional": null,
+  "score": -999
+}
+RESULT 6 OF 8
+[]
+RESULT 7 OF 8
+{
+  "active": true,
+  "label": "",
+  "optional": null,
+  "score": 1.25
+}
+RESULT 8 OF 8
+[]
+
+STATUS  Inspect all evidence diagnostics.
+  debug-mode status --session <SESSION_ID>
+
+=== empty results ===
+WARNING  [MALFORMED_RECORDS] 1 malformed records were excluded; run debug-mode status for diagnostics.
+WARNING  [SECRET_REDACTED] 1 events contained fields that were redacted.
+
+QUERY
+Session <SESSION_ID>
+durationMs        <DURATION_MS>
+malformedRecords  1
+mode              streaming
+producedValues    0
+returnedRecords   0
+scannedRecords    4
+totalRecords      5
+validRecords      4
+
+No values produced
+
+STATUS  Inspect all evidence diagnostics.
+  debug-mode status --session <SESSION_ID>"
+`;

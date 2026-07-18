@@ -1,12 +1,27 @@
+import { randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
 import { requestDaemonControl } from "../cli/daemon-client";
 import { ensureDaemon } from "../cli/daemon-manager";
 import type { CommandOutput, Warning } from "../cli/output-schema";
 import type { CliInvocation } from "../cli/program";
 import { sessionPathSegment } from "../cli/session-path";
-import { createQueryCursor, verifyQueryCursor } from "../cli/snapshot-cursor";
+import {
+  createQueryCursor,
+  type QueryContinuation,
+  QueryCursorStaleError,
+  verifyQueryCursor,
+} from "../cli/snapshot-cursor";
 import { Persistence } from "../daemon/persistence";
 import type { EvidenceDiagnostic } from "../domain/diagnostic";
-import { QueryTimeoutError, runJaqFilePage } from "../native/query";
+import type { Session } from "../domain/session";
+import {
+  EvidenceMalformedError,
+  type PagedFileQueryResult,
+  QuerySpoolUnavailableError,
+  QueryTimeoutError,
+  runJaqFilePage,
+  runJaqSlurpPage,
+} from "../native/query";
 import { commandError } from "./errors";
 
 type QueryOptions = Extract<CliInvocation["command"], { kind: "query" }>;
@@ -14,6 +29,7 @@ type QueryOptions = Extract<CliInvocation["command"], { kind: "query" }>;
 interface QueryInputResponse {
   diagnostics: EvidenceDiagnostic[];
   eventCount: number;
+  session: Session;
   watermark: number;
 }
 
@@ -28,10 +44,41 @@ function queryWarnings(diagnostics: EvidenceDiagnostic[]): Warning[] {
       message: `${malformed} malformed records were excluded; run debug-mode status for diagnostics.`,
     });
   }
+  const redacted = diagnostics.filter((item) => item.reason === "SECRET_REDACTED").length;
+  if (redacted > 0) {
+    warnings.push({
+      code: "SECRET_REDACTED",
+      message: `${redacted} events contained fields that were redacted.`,
+    });
+  }
   return warnings;
 }
 
-export async function queryCommand(options: QueryOptions): Promise<CommandOutput> {
+function nextPageCommand(
+  sessionId: string,
+  cursor: string,
+  limit: number,
+  timeoutMs: number,
+  slurp: boolean,
+  json: boolean,
+): string {
+  const parts = [
+    "debug-mode query",
+    `--session ${sessionId}`,
+    `--cursor ${cursor}`,
+    `--limit ${limit}`,
+    `--timeout-ms ${timeoutMs}`,
+  ];
+  if (slurp) {
+    parts.push("--slurp");
+  }
+  if (json) {
+    parts.push("--json");
+  }
+  return parts.join(" ");
+}
+
+export async function queryCommand(options: QueryOptions, json: boolean): Promise<CommandOutput> {
   const { cursor: requestedCursor, program: requestedProgram, sessionId } = options;
   if ((!requestedProgram && !requestedCursor) || (requestedProgram?.length ?? 0) > 4_096) {
     return {
@@ -47,6 +94,7 @@ export async function queryCommand(options: QueryOptions): Promise<CommandOutput
 
   let program = requestedProgram ?? "";
   let slurp = options.slurp;
+  let spoolPath: string | undefined;
   try {
     const sessionPath = sessionPathSegment(sessionId);
     const startedAt = performance.now();
@@ -59,10 +107,19 @@ export async function queryCommand(options: QueryOptions): Promise<CommandOutput
     );
     let hypothesisFilter: string[] = [];
     let watermark = input.watermark;
-    let offset = 0;
     let limit = options.limit;
+    let timeoutMilliseconds = options.timeoutMs;
+    let jsonRequested = json;
+    let continuation: QueryContinuation = {
+      byteOffset: 0,
+      kind: "stream",
+      outputOrdinal: 0,
+    };
     if (requestedCursor) {
-      const cursor = verifyQueryCursor(daemon.controlToken, requestedCursor, { sessionId });
+      const cursor = verifyQueryCursor(daemon.controlToken, requestedCursor, {
+        evidenceEpoch: input.session.evidenceEpoch,
+        sessionId,
+      });
       if (requestedProgram && requestedProgram !== cursor.program) {
         throw new Error("Query cursor program does not match the requested program");
       }
@@ -70,32 +127,77 @@ export async function queryCommand(options: QueryOptions): Promise<CommandOutput
       slurp = cursor.slurp;
       hypothesisFilter = cursor.hypotheses;
       watermark = cursor.watermark;
-      offset = cursor.offset;
       limit = cursor.limit;
+      timeoutMilliseconds = cursor.timeoutMs;
+      jsonRequested = cursor.json;
+      continuation = cursor.continuation;
     }
-    const timeoutMilliseconds = options.timeoutMs;
     const persistence = await Persistence.open(process.env.AGENT_DEBUG_MODE_HOME_OVERRIDE);
-    const query = runJaqFilePage(
-      program,
-      persistence.sessionFile(sessionId, "events.ndjson"),
-      hypothesisFilter,
-      watermark,
-      offset,
-      limit,
-      slurp,
-      timeoutMilliseconds,
-    );
-    const rows = query.results;
+    const evidencePath = persistence.sessionFile(sessionId, "events.ndjson");
+    let spoolId: string | undefined;
+    let spoolByteOffset = 0;
+    if (slurp) {
+      spoolId = continuation.kind === "spool" ? continuation.spoolId : randomUUID();
+      spoolByteOffset = continuation.kind === "spool" ? continuation.byteOffset : 0;
+    }
+    let page: PagedFileQueryResult;
+    if (slurp) {
+      await persistence.initializeQuerySpoolDirectory(sessionId);
+      spoolPath = persistence.querySpoolFile(sessionId, spoolId as string);
+      page = runJaqSlurpPage(
+        program,
+        evidencePath,
+        hypothesisFilter,
+        watermark,
+        spoolPath,
+        spoolByteOffset,
+        limit,
+        timeoutMilliseconds,
+      );
+    } else {
+      const streamContinuation =
+        continuation.kind === "stream"
+          ? continuation
+          : { byteOffset: 0, kind: "stream" as const, outputOrdinal: 0 };
+      page = runJaqFilePage(
+        program,
+        evidencePath,
+        hypothesisFilter,
+        watermark,
+        streamContinuation.byteOffset,
+        streamContinuation.outputOrdinal,
+        limit,
+        timeoutMilliseconds,
+      );
+    }
+    const rows = page.results;
     const warnings = queryWarnings(input.diagnostics);
-    const nextCursor = query.hasNext
+    const nextContinuation: QueryContinuation | undefined =
+      page.nextByteOffset === undefined
+        ? undefined
+        : slurp
+          ? {
+              byteOffset: page.nextByteOffset,
+              kind: "spool",
+              spoolId: spoolId as string,
+            }
+          : {
+              byteOffset: page.nextByteOffset,
+              kind: "stream",
+              outputOrdinal: page.nextOutputOrdinal ?? 0,
+            };
+    const nextCursor = nextContinuation
       ? createQueryCursor(daemon.controlToken, {
+          continuation: nextContinuation,
+          evidenceEpoch: input.session.evidenceEpoch,
           hypotheses: hypothesisFilter,
           issuedAt: Date.now(),
+          json: jsonRequested,
           limit,
-          offset: offset + query.returnedRecords,
           program,
           sessionId,
           slurp,
+          timeoutMs: timeoutMilliseconds,
           watermark,
         })
       : undefined;
@@ -112,16 +214,25 @@ export async function queryCommand(options: QueryOptions): Promise<CommandOutput
     if (nextCursor) {
       hints.push({
         action: "next-page",
-        command: `debug-mode query --session ${sessionId} --cursor ${nextCursor}`,
+        command: nextPageCommand(
+          sessionId,
+          nextCursor,
+          limit,
+          timeoutMilliseconds,
+          slurp,
+          jsonRequested,
+        ),
         message: "Continue the same query.",
       });
+    } else if (spoolPath) {
+      await rm(spoolPath, { force: true });
     }
     return {
       command: "query",
       data: {
         mode: slurp ? "slurp" : "streaming",
         pagination: {
-          hasNext: query.hasNext,
+          hasNext: page.hasNext,
           ...(nextCursor ? { nextCursor } : {}),
         },
         rows,
@@ -141,9 +252,9 @@ export async function queryCommand(options: QueryOptions): Promise<CommandOutput
           (item) => item.reason === "INVALID_JSON" || item.reason === "INVALID_SCHEMA",
         ).length,
         mode: slurp ? "slurp" : "streaming",
-        producedValues: query.producedValues,
-        returnedRecords: query.returnedRecords,
-        scannedRecords: query.scannedRecords,
+        producedValues: page.producedValues,
+        returnedRecords: page.returnedRecords,
+        scannedRecords: page.scannedRecords,
         totalRecords:
           input.eventCount +
           input.diagnostics.filter(
@@ -154,12 +265,40 @@ export async function queryCommand(options: QueryOptions): Promise<CommandOutput
       warnings,
     };
   } catch (error) {
+    if (
+      spoolPath &&
+      (error instanceof EvidenceMalformedError || error instanceof QueryTimeoutError)
+    ) {
+      await rm(spoolPath, { force: true });
+    }
     const message = error instanceof Error ? error.message : "The jaq query failed.";
-    if (error instanceof QueryTimeoutError) {
+    if (error instanceof QueryTimeoutError || error instanceof QuerySpoolUnavailableError) {
       return {
         error: {
           code: "QUERY_RESOURCE_EXHAUSTED",
           hint: "Narrow the filter, lower --limit, or increase --timeout-ms.",
+          message,
+        },
+        ok: false,
+        schemaVersion: 1,
+      };
+    }
+    if (error instanceof EvidenceMalformedError) {
+      return {
+        error: {
+          code: "EVIDENCE_MALFORMED",
+          hint: "Reset the session after preserving any needed diagnostics, then reproduce.",
+          message,
+        },
+        ok: false,
+        schemaVersion: 1,
+      };
+    }
+    if (error instanceof QueryCursorStaleError) {
+      return {
+        error: {
+          code: error.code,
+          hint: "Run the query again without --cursor.",
           message,
         },
         ok: false,

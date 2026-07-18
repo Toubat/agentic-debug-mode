@@ -90,7 +90,7 @@ export class SessionRegistry {
     return Promise.all(
       filtered.map(async (session) => ({
         createdAt: session.createdAt,
-        eventCount: (await this.events.read(session.id)).length,
+        eventCount: (await this.events.summarize(session.id)).eventCount,
         id: session.id,
       })),
     );
@@ -110,6 +110,7 @@ export class SessionRegistry {
       await Promise.all([
         this.events.clear(sessionId),
         this.diagnostics.clear(sessionId),
+        this.persistence.clearQuerySpools(sessionId),
         writeTextAtomic(this.persistence.sessionFile(sessionId, "incoming.ndjson"), ""),
         writeJsonAtomic(this.persistence.sessionFile(sessionId, "incoming.cursor.json"), {
           offset: 0,

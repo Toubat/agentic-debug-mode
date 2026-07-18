@@ -32,7 +32,7 @@ export async function dispatch(invocation: CliInvocation): Promise<CommandOutput
     case "logs":
       return logsCommand(command, invocation.json);
     case "query":
-      return queryCommand(command);
+      return queryCommand(command, invocation.json);
     case "status":
       return statusCommand(command.sessionId);
     case "sessions":
