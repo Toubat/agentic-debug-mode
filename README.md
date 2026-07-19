@@ -37,8 +37,8 @@ The skill is agent-neutral. The Skills CLI's `--agent` option chooses its instal
 it does not require a different workflow for each agent.
 
 ```bash
-npx skills add Toubat/debug-mode --list
-npx skills add Toubat/debug-mode --skill agentic-debug-mode --agent '*' --global
+npx skills add Toubat/agentic-debug-mode --list
+npx skills add Toubat/agentic-debug-mode --skill agentic-debug-mode --agent '*' --global
 ```
 
 Omit `--global` for a project-scoped install.
