@@ -1,103 +1,89 @@
 # agentic-debug-mode
 
-`agentic-debug-mode` is an evidence-first debugging CLI and installable Agent Skill. It gives
-coding agents isolated debug sessions, generated runtime probes, bounded log reads, embedded jaq
-queries, and a repeatable reset-and-reproduce workflow.
+An installable Agent Skill that stops your coding agent from guessing at bugs. Instead of
+patching code based on a plausible-looking source read, the agent instruments the running program,
+reproduces the failure, and proves the root cause with runtime evidence before it writes a fix.
 
-The CLI is a standalone executable compiled with Bun. A background service starts on demand and
-stores all local state under `~/.agent-debug-mode/`.
-
-## Install the CLI
-
-Run without a global install:
-
-```bash
-npx --yes agentic-debug-mode@latest --version
+```
+Without the skill                        With the skill
+─────────────────                        ──────────────
+"This looks like a race condition,       Adds probes → reproduces → reads the
+ let me add a lock."                       captured events → "The timeout fires
+  → maybe fixes it, maybe not.             before the retry. CONFIRMED." → fixes
+                                           the real cause and re-proves it.
 ```
 
-Or install the npm launcher:
+## Install the skill
+
+```bash
+npx skills add Toubat/agentic-debug-mode --skill agentic-debug-mode --agent '*' --global
+```
+
+Omit `--global` for a project-scoped install. The skill is agent-neutral — `--agent '*'` installs
+it for every agent the [Skills CLI](https://github.com/vercel-labs/skills) supports. To browse
+before installing:
+
+```bash
+npx skills add Toubat/agentic-debug-mode --list
+```
+
+That is the whole setup. The skill installs the supporting CLI for you the first time it needs it.
+
+## What the skill does
+
+When a bug has no proven root cause, the skill drives your agent through an evidence loop rather
+than a guessing loop:
+
+- **Create** an isolated debug session for the investigation.
+- **Instrument** the suspect code with generated runtime probes tied to a hypothesis.
+- **Reproduce** the failure after a clean reset, so the run is repeatable.
+- **Read the evidence** through bounded log reads and embedded queries — never by eyeballing raw
+  output.
+- **Verify** the hypothesis as confirmed, rejected, or inconclusive, then apply the fix and
+  re-prove it against fresh evidence.
+
+The core rule it enforces: source code only creates hypotheses; runtime evidence confirms them. No
+fix ships before the evidence identifies the cause.
+
+## What's under the hood
+
+The skill is backed by `debug-mode`, a small evidence-collection CLI. It manages debug sessions,
+generates language-specific probes, captures probe events, and serves them back through bounded
+`logs` and `query` commands so the agent reads exactly what it needs and nothing more. All local
+state lives under `~/.agent-debug-mode/`.
+
+You normally never invoke the CLI yourself — the agent runs it. It self-installs on first use, so
+no manual step is required. If you prefer it preinstalled:
 
 ```bash
 npm install --global agentic-debug-mode
 debug-mode --version
 ```
 
-The npm launcher installs one optional platform package and delegates to its standalone binary.
-Release artifacts are also published for:
+The npm launcher pulls one optional platform package and delegates to a standalone binary compiled
+with Bun. Prebuilt binaries ship for macOS (arm64, x64), Linux (arm64, x64), and Windows (x64), and
+a Homebrew formula is attached to each GitHub release.
 
-- macOS arm64 and x64;
-- Linux arm64 and x64;
-- Windows x64.
+## Supported languages
 
-The Homebrew formula is generated with release checksums and attached to each GitHub release.
+Each language and its ingest transport is exercised end to end through the compiled CLI and a real
+runtime:
 
-## Install the skill
-
-The skill is agent-neutral. The Skills CLI's `--agent` option chooses its installation location;
-it does not require a different workflow for each agent.
-
-```bash
-npx skills add Toubat/agentic-debug-mode --list
-npx skills add Toubat/agentic-debug-mode --skill agentic-debug-mode --agent '*' --global
-```
-
-Omit `--global` for a project-scoped install.
-
-## Quick start
-
-Create one session for the investigation and get a language template:
-
-```bash
-debug-mode create
-debug-mode template --language typescript --ingest http
-```
-
-Insert the returned helper once and copy the returned call template for each observation. Keep all
-`agent log` region markers. Then reset the session and reproduce the bug yourself:
-
-```bash
-debug-mode reset --session <session-id>
-```
-
-Read a bounded result:
-
-```bash
-debug-mode logs --session <session-id> --limit 100
-```
-
-Filter or transform evidence with embedded jaq:
-
-```bash
-debug-mode query --session <session-id> 'select(.message | test("timeout|deadline"; "i"))'
-```
-
-Use `--slurp` for operations across the complete record stream:
-
-```bash
-debug-mode query --session <session-id> --slurp \
-  'group_by(.hypothesisId) | map({hypothesisId: .[0].hypothesisId, count: length})'
-```
-
-Apply the fix, `reset` and reproduce again, and compare evidence. Remove the regions and
-`debug-mode stop` once the post-fix evidence proves the fix.
-
-## Supported probes
-
-Advertised, end-to-end-tested language and transport pairs:
-
-- JavaScript + HTTP, TypeScript + HTTP;
-- Python, Go, Ruby, PHP, PowerShell, C#, and Swift + direct NDJSON append.
-
-Each renderer is exercised through the compiled CLI, its real language runtime, and the public
-`template` and `logs` commands.
+| Language   | Transport |
+| ---------- | --------- |
+| JavaScript | HTTP      |
+| TypeScript | HTTP      |
+| Python     | file      |
+| Go         | file      |
+| Ruby       | file      |
+| PHP        | file      |
+| PowerShell | file      |
+| C#         | file      |
+| Swift      | file      |
 
 ## Development
 
-Requirements:
-
-- Bun 1.3.14;
-- Rust 1.91;
-- Node.js and Python 3 for live language fixtures.
+Requirements: Bun 1.3.14, Rust 1.91, and Node.js plus Python 3 for the live language fixtures.
 
 ```bash
 bun install --frozen-lockfile
@@ -107,31 +93,13 @@ bun run test
 bun run build
 ```
 
-Biome is the formatter and linter. `bun run test` serializes resource-sensitive daemon stress
-tests, then runs language and standalone-distribution suites independently.
+Biome is the formatter and linter. The full architecture and contracts live in
+[`DESIGN.md`](DESIGN.md) and
+[`specs/building-a-debug-mode-agent.md`](specs/building-a-debug-mode-agent.md). Releases are
+automated with [Changesets](https://github.com/changesets/changesets): record a bump with
+`bun changeset`, and merging the generated **Version Packages** PR tags the release and publishes
+the npm packages and Homebrew formula.
 
-The full architecture and contracts are documented in
-[`specs/building-a-debug-mode-agent.md`](specs/building-a-debug-mode-agent.md).
+## License
 
-## Releasing
-
-Releases are automated with [Changesets](https://github.com/changesets/changesets):
-
-1. Alongside a change, record the intended version bump:
-
-   ```bash
-   bun changeset
-   ```
-
-   Choose `patch`, `minor`, or `major`, write a one-line summary, and commit the generated file in
-   `.changeset/`.
-
-2. When the change lands on `main`, the `Changesets` workflow opens (or updates) a **Version
-   Packages** pull request that consumes the pending changesets, bumps the root version, and — via
-   the `version` script — propagates that version into the npm launcher and platform packages.
-
-3. Merging the Version Packages PR tags the release (`vX.Y.Z`) and dispatches the `Release`
-   workflow, which builds the native binaries and publishes the npm packages and Homebrew formula.
-
-No manual tagging or extra secrets are required.
-
+[MIT](LICENSE)
