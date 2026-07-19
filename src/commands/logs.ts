@@ -138,6 +138,14 @@ export async function logsCommand(
         message: "Inspect all malformed and abnormal evidence diagnostics.",
       });
     }
+    if (response.totalRecords === 0 && response.diagnostics.length === 0) {
+      hints.push({
+        action: "verify-ingest",
+        command: `debug-mode reset --session ${sessionId}`,
+        message:
+          "No evidence captured. An unexecuted path or a failed run is one cause; another is a stale probe endpoint — if the service restarted since the probes were inserted, reset prints the current Ingest URL and Append Path, then update the probes and reproduce.",
+      });
+    }
     return {
       command: "logs",
       data: {

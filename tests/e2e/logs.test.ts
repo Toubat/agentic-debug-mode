@@ -32,6 +32,23 @@ async function runCli(home: string, args: string[]) {
   return { exitCode, stderr, stdout };
 }
 
+test("logs with zero evidence hints that the probes' ingest endpoint may be stale", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-logs-"));
+  temporaryDirectories.push(home);
+  const created = await runCli(home, ["create", "--json"]);
+  const sessionId = (JSON.parse(created.stdout) as CommandResult).scope.sessionId ?? "";
+
+  const empty = await runCli(home, ["logs", "--session", sessionId, "--json"]);
+  expect(empty.exitCode).toBe(0);
+  const result = JSON.parse(empty.stdout) as CommandResult;
+  const hint = result.hints.find((item) => item.action === "verify-ingest");
+  expect(hint, JSON.stringify(result.hints)).toBeDefined();
+  expect(hint?.command).toBe(`debug-mode reset --session ${sessionId}`);
+  expect(hint?.message).toContain("Ingest URL");
+
+  await runCli(home, ["stop"]);
+});
+
 test("logs sorts by timestamp and sequence and reset invalidates its snapshot", async () => {
   const home = await mkdtemp(join(tmpdir(), "agent-debug-mode-logs-"));
   temporaryDirectories.push(home);
