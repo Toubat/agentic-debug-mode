@@ -4,9 +4,11 @@ An installable Agent Skill that stops your coding agent from guessing at bugs. I
 patching code based on a plausible-looking source read, the agent instruments the running program,
 reproduces the failure, and proves the root cause with runtime evidence before it writes a fix.
 
-Highly inspired by [Cursor's debug mode](https://cursor.com/blog/debug-mode), rebuilt from the
-ground up to be agent-agnostic: any coding agent that can run a CLI gets the same
-evidence-driven debugging loop.
+Based on [Cursor's debug mode](https://cursor.com/blog/debug-mode) and built upon it: the same
+hypothesis-driven core, made agent-agnostic (any coding agent that can run a CLI), and extended
+with a session-scoped evidence store, hypothesis-tagged probes across nine languages, embedded
+structured queries over captured events, at-source secret redaction, and bounded reads that keep
+large evidence sets token-cheap.
 
 ```
 Without the skill                        With the skill
