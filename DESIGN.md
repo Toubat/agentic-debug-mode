@@ -137,6 +137,18 @@ After reset:
 Returns bounded structured records with filtering, offset/limit pagination, statistics, warnings,
 and complete continuation commands. Pretty output is primary.
 
+The pretty table is tuned for low token cost, since agents read it most. Its columns are:
+
+```text
+SEQ  TIME  HYP  LOCATION  MESSAGE  DATA
+```
+
+`SEQ` is the human- and agent-facing record handle. `TIME` renders the compact intra-day clock
+(`HH:MM:SS.mmm`); the UTC date is printed once as a `date <YYYY-MM-DD>` header above the table, with
+a `-- <YYYY-MM-DD> --` separator row emitted only when records cross into a new UTC day. The
+per-record `id` and `receivedAt` are omitted from the pretty table but remain in storage, `--json`,
+and `query` results. `DATA` and `HYP` are always shown in full.
+
 ### `debug-mode query --session <id> '<jaq program>'`
 
 Runs embedded jaq against the session evidence. Streaming mode is default; collection operations
