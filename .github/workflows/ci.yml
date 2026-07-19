@@ -2,6 +2,16 @@ name: CI
 
 on:
   pull_request:
+    # Documentation-only changes have no test coverage reading them; skip the
+    # full matrix. skills/**.md is deliberately NOT ignored — skill-contract
+    # and tracked-language tests read those files. Pushes to main always run.
+    paths-ignore:
+      - "README.md"
+      - "CHANGELOG.md"
+      - "LICENSE"
+      - "specs/**"
+      - ".changeset/**"
+      - "packages/**/CHANGELOG.md"
   push:
     branches:
       - main
@@ -11,6 +21,10 @@ permissions:
 
 jobs:
   verify:
+    # The changesets bot's Version Packages PR only syncs versions/changelogs;
+    # version correctness is re-asserted by the release build's distribution
+    # tests, and the post-merge push to main still runs the full matrix.
+    if: github.event_name != 'pull_request' || github.head_ref != 'changeset-release/main'
     strategy:
       fail-fast: false
       matrix:
