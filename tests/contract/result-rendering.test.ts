@@ -238,11 +238,58 @@ describe("command result rendering", () => {
 
     const rendered = renderPretty(result);
 
-    expect(rendered).toContain("ID     SEQ");
-    expect(rendered).toContain("evt_1");
+    // Token-lean table: SEQ is the record handle; the ID column is dropped.
+    expect(rendered).toContain("SEQ  TIME");
+    expect(rendered).not.toContain("evt_1");
+    // RECEIVED column is dropped (receivedAt stays in --json/storage).
+    expect(rendered).not.toContain("RECEIVED");
+    expect(rendered).not.toContain("17:40:00.456");
+    // TIME renders as a compact HH:MM:SS.mmm, not the full ISO timestamp.
+    expect(rendered).toContain("17:40:00.123");
+    expect(rendered).not.toContain("2026-07-17T17:40:00.123Z");
+    // The UTC date is printed once as a header, not repeated per row.
+    expect(rendered.match(/date 2026-07-17/g)).toHaveLength(1);
     expect(rendered).toContain("src/cart.ts:84");
     expect(rendered).toContain('{"subtotal":9000,"user":{"id":"u1"}}');
     expect(rendered.match(/session-1/g)).toHaveLength(1);
+  });
+
+  test("logs emit a day-separator only when records cross a UTC day", () => {
+    const base = {
+      hints: [],
+      ok: true,
+      partial: false,
+      schemaVersion: 1,
+      scope: { hypothesisFilter: null, sessionId: "session-1" },
+      statistics: { returnedRecords: 2, totalRecords: 2 },
+      warnings: [],
+    };
+    const record = (sequence: number, timestamp: number) => ({
+      data: { ok: true },
+      hypothesisId: "H1",
+      id: `evt_${sequence}`,
+      location: "src/cart.ts:84",
+      message: "step",
+      receivedAt: timestamp,
+      sequence,
+      timestamp,
+    });
+
+    const sameDay = renderPretty({
+      command: "logs",
+      data: { records: [record(1, 1_784_310_000_123), record(2, 1_784_310_000_500)] },
+      ...base,
+    } as unknown as CommandResult);
+    expect(sameDay).toContain("date 2026-07-17");
+    expect(sameDay).not.toContain("2026-07-18");
+
+    const crossDay = renderPretty({
+      command: "logs",
+      data: { records: [record(1, 1_784_310_000_123), record(2, 1_784_396_400_123)] },
+      ...base,
+    } as unknown as CommandResult);
+    expect(crossDay).toContain("date 2026-07-17");
+    expect(crossDay).toContain("2026-07-18");
   });
 
   test("query renders homogeneous flat objects as a table", () => {

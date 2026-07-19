@@ -81,16 +81,24 @@ function formatTimestamp(timestamp: number): string {
   return Number.isNaN(date.valueOf()) ? String(timestamp) : date.toISOString();
 }
 
+function formatCompactTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.valueOf()) ? String(timestamp) : date.toISOString().slice(11, 23);
+}
+
+function formatUtcDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.valueOf()) ? String(timestamp) : date.toISOString().slice(0, 10);
+}
+
 function renderLogTable(records: LogRecord[]): string[] {
   if (records.length === 0) {
     return ["records", "  (none)"];
   }
-  const headers = ["ID", "SEQ", "TIME", "RECEIVED", "HYP", "LOCATION", "MESSAGE", "DATA"];
+  const headers = ["SEQ", "TIME", "HYP", "LOCATION", "MESSAGE", "DATA"];
   const rows = records.map((record) => [
-    record.id,
     String(record.sequence),
-    formatTimestamp(record.timestamp),
-    formatTimestamp(record.receivedAt),
+    formatCompactTime(record.timestamp),
     record.hypothesisId,
     record.location,
     record.message,
@@ -105,7 +113,22 @@ function renderLogTable(records: LogRecord[]): string[] {
         index === row.length - 1 ? value : value.padEnd(widths[index] ?? value.length),
       )
       .join("  ");
-  return ["records", renderRow(headers), ...rows.map(renderRow)];
+  // The UTC date is printed once as a header; TIME columns carry only the
+  // intra-day clock. A day-separator row marks each crossing into a new day.
+  let currentDate = formatUtcDate(records[0]?.timestamp ?? 0);
+  const lines = [`date ${currentDate}`, "records", renderRow(headers)];
+  records.forEach((record, index) => {
+    const recordDate = formatUtcDate(record.timestamp);
+    if (recordDate !== currentDate) {
+      lines.push(`-- ${recordDate} --`);
+      currentDate = recordDate;
+    }
+    const row = rows[index];
+    if (row) {
+      lines.push(renderRow(row));
+    }
+  });
+  return lines;
 }
 
 function isScalar(value: unknown): boolean {
