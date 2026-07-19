@@ -197,9 +197,9 @@ async function tryAdoptReadyCandidate(
 // on that false negative would terminate a live daemon out from under the
 // callers currently connected to it. Retry a few times so only a daemon that
 // stays silent is declared dead.
-async function probeDaemonHealth(
+export async function probeDaemonHealth(
   connection: Pick<DaemonConnection, "controlToken" | "host" | "port">,
-  clock: DaemonManagerClock,
+  clock: DaemonManagerClock = systemManagerClock,
   attempts = 5,
 ): Promise<DaemonMetadata | undefined> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -244,6 +244,17 @@ async function retireVerifiedStaleProcess(
     return undefined;
   }
 
+  await ensureRecordedProcessGone(state, clock);
+}
+
+// Resolves once the RECORDED daemon process is verifiably absent: already dead,
+// identity-mismatched (an unrelated process reused the pid), or terminated here
+// with graceful-then-forced escalation. Throws only when even a forced signal
+// leaves the identity-verified process running.
+export async function ensureRecordedProcessGone(
+  state: DaemonMetadata,
+  clock: DaemonManagerClock = systemManagerClock,
+): Promise<void> {
   const process = inspectProcess(state.pid);
   if (
     !process.exists ||
