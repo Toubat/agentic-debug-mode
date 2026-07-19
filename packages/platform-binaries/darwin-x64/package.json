@@ -1,5 +1,5 @@
 {
-  "name": "@agentic-debug-mode/cli-darwin-x64",
+  "name": "agentic-debug-mode-darwin-x64",
   "version": "0.2.0",
   "description": "agentic-debug-mode binary for macOS Intel",
   "license": "MIT",

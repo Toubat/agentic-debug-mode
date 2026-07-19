@@ -1,5 +1,5 @@
 {
-  "name": "@agentic-debug-mode/cli-win32-x64",
+  "name": "agentic-debug-mode-win32-x64",
   "version": "0.2.0",
   "description": "agentic-debug-mode binary for Windows x64",
   "license": "MIT",

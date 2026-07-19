@@ -6,11 +6,11 @@ import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
 const packageByTarget = {
-  "darwin-arm64": "@agentic-debug-mode/cli-darwin-arm64",
-  "darwin-x64": "@agentic-debug-mode/cli-darwin-x64",
-  "linux-arm64": "@agentic-debug-mode/cli-linux-arm64",
-  "linux-x64": "@agentic-debug-mode/cli-linux-x64",
-  "win32-x64": "@agentic-debug-mode/cli-win32-x64",
+  "darwin-arm64": "agentic-debug-mode-darwin-arm64",
+  "darwin-x64": "agentic-debug-mode-darwin-x64",
+  "linux-arm64": "agentic-debug-mode-linux-arm64",
+  "linux-x64": "agentic-debug-mode-linux-x64",
+  "win32-x64": "agentic-debug-mode-win32-x64",
 };
 
 function resolveBinary() {
