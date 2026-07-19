@@ -53,8 +53,8 @@ Terms used throughout, defined once:
 Run `debug-mode --version`. If it is missing, install it with the first channel the host's package
 policy allows, then verify again:
 
-1. npm: `npm install --global agentic-debug-mode`
-2. Bun: `bun install --global agentic-debug-mode`
+1. npm: `npm install --global agentic-debug-mode@latest`
+2. Bun: `bun install --global agentic-debug-mode@latest`
 3. Homebrew only when the project documents its official tap coordinate.
 4. Zero-install fallback: prefix every command with `npx --yes agentic-debug-mode@latest`.
 

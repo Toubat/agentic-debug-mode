@@ -45,7 +45,7 @@ describe("agentic-debug-mode skill", () => {
 
   test("resolves the public CLI without unsafe installation", () => {
     expect(skill).toContain("debug-mode --version");
-    expect(skill).toContain("npm install --global agentic-debug-mode");
+    expect(skill).toContain("npm install --global agentic-debug-mode@latest");
     expect(skill).toContain("npx --yes agentic-debug-mode@latest");
     expect(skill).toContain("Homebrew only when the project documents its official tap coordinate");
     expect(skill).toContain("Never use an unverified `curl | sh`");
