@@ -102,8 +102,8 @@ jobs:
           bun-version: 1.3.14
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
+          # node 24 bundles npm >= 11.5.1, required for npm Trusted Publishing
           node-version: 24
-          registry-url: https://registry.npmjs.org
       - run: bun install --frozen-lockfile
       - name: Verify tag and package versions
         shell: bash
@@ -150,8 +150,6 @@ jobs:
             release/checksums.txt
       - name: Publish platform packages
         shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           for package in packages/platform-binaries/*/; do
             target="$(basename "$package")"
@@ -172,8 +170,6 @@ jobs:
           done
       - name: Publish npm launcher
         shell: bash
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           name="$(node -p "require('./packages/npm-launcher/package.json').name")"
           version="$(node -p "require('./packages/npm-launcher/package.json').version")"

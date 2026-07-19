@@ -99,6 +99,10 @@ describe("release definitions", () => {
     expect(release).toContain("agentic-debug-mode.spdx.json");
     expect(release).toContain("cosign sign-blob");
     expect(release).toContain("checksums.txt.sig");
+    // npm publishes authenticate via Trusted Publishing (GitHub OIDC), never
+    // via long-lived registry tokens.
+    expect(release).not.toContain("NPM_TOKEN");
+    expect(release).not.toContain("NODE_AUTH_TOKEN");
     expect(release).toContain("build:\n    permissions:\n      contents: read");
     expect(release).toContain(
       "publish:\n    permissions:\n      contents: write\n      id-token: write",
