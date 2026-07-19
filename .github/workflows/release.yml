@@ -49,10 +49,10 @@ jobs:
         with:
           toolchain: 1.91.0
       - run: bun install --frozen-lockfile
-      - run: bun run check
-      - run: bun run typecheck
-      - run: bun run test
+      # Release build jobs validate artifact integrity only; the full source suite
+      # (check, typecheck, language e2e) is the CI gate on main for this same commit.
       - run: bun run build
+      - run: bun test tests/distribution
       - name: Verify standalone executable
         shell: bash
         run: ./dist/${{ matrix.executable }} --version

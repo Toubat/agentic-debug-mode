@@ -73,9 +73,10 @@ describe("release definitions", () => {
     for (const target of targets) {
       expect(release).toContain(target);
     }
-    expect(release).toContain("bun run check");
-    expect(release).toContain("bun run typecheck");
-    expect(release).toContain("bun run test");
+    // Release build jobs validate artifact integrity only (build + the distribution
+    // suite); the full source gate (check, typecheck, language e2e) lives in CI on main.
+    expect(release).toContain("bun run build");
+    expect(release).toContain("bun test tests/distribution");
     expect(release).toContain("checksums.txt");
     expect(release).toContain("anchore/sbom-action@");
     expect(release).toContain("agentic-debug-mode.spdx.json");

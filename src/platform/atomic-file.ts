@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { retryOnWindowsLock } from "./windows-lock-retry";
 
 async function syncDirectory(path: string): Promise<void> {
   if (process.platform === "win32") {
@@ -12,12 +13,6 @@ async function syncDirectory(path: string): Promise<void> {
   } finally {
     await directory.close();
   }
-}
-
-const RENAME_RETRY_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
-
-function defaultSleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 export interface RenameRetryOptions {
@@ -36,30 +31,9 @@ export interface RenameRetryOptions {
 export async function renameWithRetry(
   from: string,
   to: string,
-  {
-    rename: renameImpl = rename,
-    sleep = defaultSleep,
-    attempts = 10,
-    platform = process.platform,
-  }: RenameRetryOptions = {},
+  { rename: renameImpl = rename, sleep, attempts, platform }: RenameRetryOptions = {},
 ): Promise<void> {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      await renameImpl(from, to);
-      return;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      const retryable =
-        platform === "win32" &&
-        code !== undefined &&
-        RENAME_RETRY_CODES.has(code) &&
-        attempt < attempts - 1;
-      if (!retryable) {
-        throw error;
-      }
-      await sleep(5 + Math.floor(Math.random() * 5));
-    }
-  }
+  await retryOnWindowsLock(() => renameImpl(from, to), { sleep, attempts, platform });
 }
 
 export async function writeTextAtomic(path: string, value: string): Promise<void> {
