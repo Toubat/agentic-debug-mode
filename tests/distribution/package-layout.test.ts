@@ -33,7 +33,7 @@ describe("npm distribution layout", () => {
     expect(launcher.version).toBe(rootVersion);
     expect(launcher.bin).toEqual({ "debug-mode": "bin/debug-mode.js" });
     expect(Object.keys(launcher.optionalDependencies ?? {}).sort()).toEqual(
-      targets.map((target) => `@agentic-debug-mode/cli-${target}`).sort(),
+      targets.map((target) => `agentic-debug-mode-${target}`).sort(),
     );
     expect(new Set(Object.values(launcher.optionalDependencies ?? {}))).toEqual(
       new Set([launcher.version]),
@@ -47,7 +47,7 @@ describe("npm distribution layout", () => {
       const architecture = target.split("-")[1] ?? "";
       const packageJson = await manifest(join(platformsDirectory, target, "package.json"));
 
-      expect(packageJson.name).toBe(`@agentic-debug-mode/cli-${target}`);
+      expect(packageJson.name).toBe(`agentic-debug-mode-${target}`);
       expect(packageJson.os).toEqual([platform]);
       expect(packageJson.cpu).toEqual([architecture]);
       // The version script keeps every platform package in lockstep with the root package.
@@ -77,10 +77,19 @@ describe("release definitions", () => {
     // suite); the full source gate (check, typecheck, language e2e) lives in CI on main.
     expect(release).toContain("bun run build");
     expect(release).toContain("bun test tests/distribution");
+    // native-smoke's beforeAll compiles the standalone, which links the native
+    // addons produced by build:native, so build:native must run before the
+    // distribution suite. Match "run: bun run build:native" explicitly (its own
+    // step) to keep this index distinct from the plain "bun run build" step.
+    expect(release).toContain("bun run build:native");
+    expect(release.indexOf("run: bun run build:native")).toBeLessThan(
+      release.indexOf("bun test tests/distribution"),
+    );
     // native-smoke's afterAll removes dist/, so distribution tests must run
-    // before the release build that produces the verified/uploaded binary.
+    // before the release build that produces the verified/uploaded binary. The
+    // trailing newline pins the match to the plain build step, never build:native.
     expect(release.indexOf("bun test tests/distribution")).toBeLessThan(
-      release.indexOf("run: bun run build"),
+      release.indexOf("run: bun run build\n"),
     );
     expect(release).toContain("checksums.txt");
     expect(release).toContain("anchore/sbom-action@");

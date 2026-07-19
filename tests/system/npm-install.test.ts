@@ -98,7 +98,7 @@ describe("npm installation", () => {
         unknown
       >;
       launcherManifest.optionalDependencies = {
-        [`@agentic-debug-mode/cli-${target}`]: `file:${platformArchive}`,
+        [`agentic-debug-mode-${target}`]: `file:${platformArchive}`,
       };
       await writeFile(launcherManifestPath, `${JSON.stringify(launcherManifest, null, 2)}\n`);
       const launcherArchive = await pack(launcherStage, temporary);
