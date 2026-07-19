@@ -77,6 +77,9 @@ describe("release definitions", () => {
     // suite); the full source gate (check, typecheck, language e2e) lives in CI on main.
     expect(release).toContain("bun run build");
     expect(release).toContain("bun test tests/distribution");
+    // Publishes must be retry-idempotent: a half-completed run re-dispatched
+    // later would otherwise 403 on the versions that already landed.
+    expect(release).toContain("already published; skipping");
     // native-smoke's beforeAll compiles the standalone, which links the native
     // addons produced by build:native, so build:native must run before the
     // distribution suite. Match "run: bun run build:native" explicitly (its own
