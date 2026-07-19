@@ -167,7 +167,7 @@ jobs:
             if [ "$(npm view "$name@$version" version 2>/dev/null)" = "$version" ]; then
               echo "$name@$version already published; skipping"
             else
-              npm publish "$package" --access public
+              npm publish "./$package" --access public
             fi
           done
       - name: Publish npm launcher
@@ -180,7 +180,7 @@ jobs:
           if [ "$(npm view "$name@$version" version 2>/dev/null)" = "$version" ]; then
             echo "$name@$version already published; skipping"
           else
-            npm publish packages/npm-launcher --access public
+            npm publish ./packages/npm-launcher --access public
           fi
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
