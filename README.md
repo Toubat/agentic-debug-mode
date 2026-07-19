@@ -4,6 +4,10 @@ An installable Agent Skill that stops your coding agent from guessing at bugs. I
 patching code based on a plausible-looking source read, the agent instruments the running program,
 reproduces the failure, and proves the root cause with runtime evidence before it writes a fix.
 
+Highly inspired by [Cursor's debug mode](https://cursor.com/blog/debug-mode), rebuilt from the
+ground up to be agent-agnostic: any coding agent that can run a CLI gets the same
+evidence-driven debugging loop.
+
 ```
 Without the skill                        With the skill
 ─────────────────                        ──────────────
