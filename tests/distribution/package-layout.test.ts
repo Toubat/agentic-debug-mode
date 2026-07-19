@@ -77,6 +77,11 @@ describe("release definitions", () => {
     // suite); the full source gate (check, typecheck, language e2e) lives in CI on main.
     expect(release).toContain("bun run build");
     expect(release).toContain("bun test tests/distribution");
+    // native-smoke's afterAll removes dist/, so distribution tests must run
+    // before the release build that produces the verified/uploaded binary.
+    expect(release.indexOf("bun test tests/distribution")).toBeLessThan(
+      release.indexOf("run: bun run build"),
+    );
     expect(release).toContain("checksums.txt");
     expect(release).toContain("anchore/sbom-action@");
     expect(release).toContain("agentic-debug-mode.spdx.json");
