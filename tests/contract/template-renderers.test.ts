@@ -22,6 +22,7 @@ const supported = [
   ["rust", "file"],
   ["cpp", "file"],
   ["c", "file"],
+  ["java", "file"],
 ] as const satisfies readonly (readonly [TemplateLanguage, IngestMethod])[];
 
 const callPlaceholders = [
@@ -119,6 +120,8 @@ describe("session-independent template renderers", () => {
     expect(renderTemplate("cxx", "file").language).toBe("cpp");
     expect(renderTemplate("C", "FILE").language).toBe("c");
     expect(renderTemplate("c", "file").language).toBe("c");
+    expect(renderTemplate("Java", "FILE").language).toBe("java");
+    expect(renderTemplate("java", "file").language).toBe("java");
   });
 
   test("rejects every unadvertised language and ingest pair with a typed error", () => {
@@ -135,6 +138,7 @@ describe("session-independent template renderers", () => {
       ["rust", "http"],
       ["cpp", "http"],
       ["c", "http"],
+      ["java", "http"],
       ["javascript", "socket"],
     ] as const) {
       try {

@@ -2,6 +2,7 @@ import { renderCTemplate } from "./c";
 import { renderCppTemplate } from "./cpp";
 import { renderCSharpTemplate } from "./csharp";
 import { renderGoTemplate } from "./go";
+import { renderJavaTemplate } from "./java";
 import { renderJavaScriptTemplate } from "./javascript";
 import { renderPhpTemplate } from "./php";
 import { renderPowerShellTemplate } from "./powershell";
@@ -23,7 +24,8 @@ export type TemplateLanguage =
   | "swift"
   | "rust"
   | "cpp"
-  | "c";
+  | "c"
+  | "java";
 
 export type IngestMethod = "http" | "file";
 
@@ -92,6 +94,8 @@ function normalizeLanguage(language: string): TemplateLanguage | undefined {
       return "cpp";
     case "c":
       return "c";
+    case "java":
+      return "java";
     default:
       return undefined;
   }
@@ -130,6 +134,8 @@ export function renderTemplate(language: string, ingest: string): ProbeTemplates
       return renderCppTemplate();
     case "c:file":
       return renderCTemplate();
+    case "java:file":
+      return renderJavaTemplate();
     default:
       throw new UnsupportedTemplateError(language, ingest);
   }

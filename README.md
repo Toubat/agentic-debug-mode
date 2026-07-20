@@ -89,6 +89,7 @@ runtime:
 | Rust       | file      |
 | C++        | file      |
 | C          | file      |
+| Java       | file      |
 
 ## Development
 
