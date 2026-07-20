@@ -19,6 +19,7 @@ const supported = [
   ["powershell", "file"],
   ["csharp", "file"],
   ["swift", "file"],
+  ["rust", "file"],
 ] as const satisfies readonly (readonly [TemplateLanguage, IngestMethod])[];
 
 const callPlaceholders = [
@@ -109,6 +110,8 @@ describe("session-independent template renderers", () => {
     expect(renderTemplate("C#", "file").language).toBe("csharp");
     expect(renderTemplate("cs", "file").language).toBe("csharp");
     expect(renderTemplate("SWIFT", "FILE").language).toBe("swift");
+    expect(renderTemplate("Rust", "FILE").language).toBe("rust");
+    expect(renderTemplate("rs", "file").language).toBe("rust");
   });
 
   test("rejects every unadvertised language and ingest pair with a typed error", () => {
@@ -122,7 +125,7 @@ describe("session-independent template renderers", () => {
       ["powershell", "http"],
       ["csharp", "http"],
       ["swift", "http"],
-      ["rust", "file"],
+      ["rust", "http"],
       ["javascript", "socket"],
     ] as const) {
       try {

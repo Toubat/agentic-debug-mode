@@ -114,7 +114,7 @@ with the Append Path. Advertised combinations, each verified end-to-end:
 | TypeScript | http   | PHP         | file   |
 | Python     | file   | PowerShell  | file   |
 | Go         | file   | C#          | file   |
-| Swift      | file   |             |        |
+| Swift      | file   | Rust        | file   |
 
 The output has four sections: **HELPER TEMPLATE**, **CALL TEMPLATE**, **PLACEHOLDERS**, and
 **EVENT SCHEMA**.
