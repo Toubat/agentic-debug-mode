@@ -66,15 +66,20 @@ interface Fixture {
   // interpreted languages use one. Avoiding a shell sidesteps cmd.exe quote
   // mangling of compound "&&" command strings on Windows.
   command: (fixturePath: string) => string[][];
-  cycleData: string;
-  cyclePrelude: string;
+  // How the call site supplies `data`. native-json-value templates redact and
+  // serialize client-side; serialized-json templates pass raw caller JSON that
+  // the daemon redacts. The cycle/shared-reference cases only apply to the
+  // client-side value model, so they are omitted for serialized-json fixtures.
+  dataEncoding: "native-json-value" | "serialized-json";
+  cycleData?: string;
+  cyclePrelude?: string;
   file: string;
   ingest: "file" | "http";
   language: string;
   runtime: string | null;
   setup?: (workspace: string) => Promise<void>;
-  sharedData: string;
-  sharedPrelude: string;
+  sharedData?: string;
+  sharedPrelude?: string;
 }
 
 const fixtures: Fixture[] = [
@@ -84,6 +89,7 @@ const fixtures: Fixture[] = [
     command: (path) => [[Bun.which("node") ?? "", path]],
     cycleData: "__agentCycle",
     cyclePrelude: "const __agentCycle = {}; __agentCycle.self = __agentCycle;",
+    dataEncoding: "native-json-value",
     file: "javascript-http.mjs",
     ingest: "http",
     language: "javascript",
@@ -98,6 +104,7 @@ const fixtures: Fixture[] = [
     cycleData: "__agentCycle",
     cyclePrelude:
       "const __agentCycle: Record<string, unknown> = {}; __agentCycle.self = __agentCycle;",
+    dataEncoding: "native-json-value",
     file: "typescript-http.ts",
     ingest: "http",
     language: "typescript",
@@ -112,6 +119,7 @@ const fixtures: Fixture[] = [
     command: (path) => [[Bun.which("python3") ?? "", path]],
     cycleData: "__agent_cycle",
     cyclePrelude: '__agent_cycle = {}; __agent_cycle["self"] = __agent_cycle',
+    dataEncoding: "native-json-value",
     file: "python-file.py",
     ingest: "file",
     language: "python",
@@ -125,6 +133,7 @@ const fixtures: Fixture[] = [
     command: (path) => [[Bun.which("go") ?? "", "run", path]],
     cycleData: "__agentCycle",
     cyclePrelude: '__agentCycle := map[string]any{}; __agentCycle["self"] = __agentCycle',
+    dataEncoding: "native-json-value",
     file: "go-file.go",
     ingest: "file",
     language: "go",
@@ -138,6 +147,7 @@ const fixtures: Fixture[] = [
     command: (path) => [[Bun.which("ruby") ?? "", path]],
     cycleData: "__agent_cycle",
     cyclePrelude: '__agent_cycle = {}; __agent_cycle["self"] = __agent_cycle',
+    dataEncoding: "native-json-value",
     file: "ruby-file.rb",
     ingest: "file",
     language: "ruby",
@@ -151,6 +161,7 @@ const fixtures: Fixture[] = [
     command: (path) => [[Bun.which("php") ?? "", path]],
     cycleData: "$__agentCycle",
     cyclePrelude: '$__agentCycle = []; $__agentCycle["self"] = &$__agentCycle;',
+    dataEncoding: "native-json-value",
     file: "php-file.php",
     ingest: "file",
     language: "php",
@@ -164,6 +175,7 @@ const fixtures: Fixture[] = [
     command: (path) => [[Bun.which("pwsh") ?? "", "-File", path]],
     cycleData: "$__agentCycle",
     cyclePrelude: "$__agentCycle = @{}; $__agentCycle.self = $__agentCycle",
+    dataEncoding: "native-json-value",
     file: "powershell-file.ps1",
     ingest: "file",
     language: "powershell",
@@ -178,6 +190,7 @@ const fixtures: Fixture[] = [
     cycleData: "__agentCycle",
     cyclePrelude:
       'var __agentCycle = new Dictionary<string, object?>(); __agentCycle["self"] = __agentCycle;',
+    dataEncoding: "native-json-value",
     file: "Program.cs",
     ingest: "file",
     language: "csharp",
@@ -203,6 +216,7 @@ const fixtures: Fixture[] = [
     command: (path) => [[Bun.which("swift") ?? "", path]],
     cycleData: "__agentCycle",
     cyclePrelude: 'let __agentCycle = NSMutableDictionary(); __agentCycle["self"] = __agentCycle',
+    dataEncoding: "native-json-value",
     file: "swift-file.swift",
     ingest: "file",
     language: "swift",
@@ -211,27 +225,22 @@ const fixtures: Fixture[] = [
     sharedPrelude: 'let __agentShared: [String: Any] = ["APIKey": "source-shared-secret"]',
   },
   {
+    // Serialized-json call sites hand the emitter one complete raw JSON value.
+    // The fixture emits the policy matrix verbatim (secrets included) as a raw
+    // string literal; the daemon performs redaction, so canonical evidence still
+    // equals canonicalPolicyData.
     callData:
-      'adbg!({ "value": 42i64, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7i64, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": { "apiKey": "source-api-secret", "items": [ { "refresh-token": "source-refresh-secret" }, { "credentials": "source-credentials-secret" } ] } })',
-    // Rust's AgentValue is an owned tree, so a reference cycle is unrepresentable.
-    // The depth-64 cap is the analogous unbounded-structure rejection: a value
-    // nested past the cap is dropped without emitting, exactly like a cycle would be.
+      'r#"{"value":42,"designToken":"visible-design-token","fortuneCookie":"visible-fortune-cookie","secretSauceName":"visible-secret-sauce","tokenCount":7,"passwordPolicy":"visible-password-policy","password":"source-password-secret","APIKey":"source-api-acronym-secret","APIToken":"source-api-token-secret","IDToken":"source-id-token-secret","OAuthToken":"source-oauth-token-secret","Client Secret":"source-client-secret","nested":{"apiKey":"source-api-secret","items":[{"refresh-token":"source-refresh-secret"},{"credentials":"source-credentials-secret"}]}}"#',
     command: (path) => {
       const rustc = Bun.which("rustc") ?? "";
       const binary = path.replace(/\.rs$/, process.platform === "win32" ? ".exe" : ".out");
       return [[rustc, "-A", "warnings", path, "-o", binary], [binary]];
     },
-    cycleData: "__agent_cycle",
-    cyclePrelude:
-      "let mut __agent_cycle = AgentValue::Int(0); let mut __agent_depth = 0; while __agent_depth < 100 { __agent_cycle = AgentValue::Array(vec![__agent_cycle]); __agent_depth += 1; }",
+    dataEncoding: "serialized-json",
     file: "rust-file.rs",
     ingest: "file",
     language: "rust",
     runtime: Bun.which("rustc"),
-    sharedData:
-      'AgentValue::Object(vec![("left".to_string(), __agent_shared.clone()), ("right".to_string(), __agent_shared)])',
-    sharedPrelude:
-      'let __agent_shared = AgentValue::Object(vec![("APIKey".to_string(), AgentValue::from("source-shared-secret"))]);',
   },
   {
     callData:
@@ -253,6 +262,7 @@ const fixtures: Fixture[] = [
     // clang 18 / gcc 13 copy), so the nesting depth would vary by toolchain.
     cyclePrelude:
       "AgentValue __agent_cycle = AgentValue(0LL); for (int __agent_depth = 0; __agent_depth < 100; __agent_depth += 1) { AgentValue __agent_wrap; __agent_wrap.kind = AgentKind::Array; __agent_wrap.arrayValue.push_back(__agent_cycle); __agent_cycle = __agent_wrap; }",
+    dataEncoding: "native-json-value",
     file: "cpp-file.cpp",
     ingest: "file",
     language: "cpp",
@@ -275,6 +285,7 @@ const fixtures: Fixture[] = [
     cycleData: "__agent_cycle",
     cyclePrelude:
       "AgentValue *__agent_cycle = adbg_int(0); for (int __agent_depth = 0; __agent_depth < 100; __agent_depth += 1) { __agent_cycle = adbg_arr(__agent_cycle, NULL); }",
+    dataEncoding: "native-json-value",
     file: "c-file.c",
     ingest: "file",
     language: "c",
@@ -293,6 +304,7 @@ const fixtures: Fixture[] = [
     cycleData: "__agentCycle",
     cyclePrelude:
       'java.util.Map<String, Object> __agentCycle = new java.util.LinkedHashMap<>(); __agentCycle.put("self", __agentCycle);',
+    dataEncoding: "native-json-value",
     file: "java-file.java",
     ingest: "file",
     language: "java",
@@ -320,6 +332,7 @@ const fixtures: Fixture[] = [
     cycleData: "__agentCycle",
     cyclePrelude:
       'val __agentCycle = java.util.LinkedHashMap<String, Any>(); __agentCycle.put("self", __agentCycle)',
+    dataEncoding: "native-json-value",
     file: "kotlin-file.kt",
     ingest: "file",
     language: "kotlin",
@@ -477,6 +490,7 @@ function materialize(
   const values: Record<string, string> = {
     __APPEND_PATH__: target,
     __DATA_EXPRESSION__: dataExpression,
+    __DATA_JSON_EXPRESSION__: dataExpression,
     __HYPOTHESIS_ID__: "H-live",
     __INGEST_URL__: target,
     __LOCATION__: `${fixture.file}:1`,
@@ -601,13 +615,22 @@ describe("live language templates", () => {
           const raw = capture
             ? capture.bodies.join("")
             : await readFile(created.data.appendPath, "utf8");
-          for (const secret of sourceSecrets) {
-            expect(raw).not.toContain(secret);
-          }
-          expect(raw).toContain("[REDACTED]");
           const [rawLine] = raw.trim().split("\n");
           const rawEvent = JSON.parse(rawLine ?? "") as { data: unknown };
-          expect(rawEvent.data).toEqual(canonicalPolicyData);
+          if (fixture.dataEncoding === "native-json-value") {
+            // The client redacts before transport, so no secret ever reaches the
+            // incoming record and its data already equals canonical evidence.
+            for (const secret of sourceSecrets) {
+              expect(raw).not.toContain(secret);
+            }
+            expect(raw).toContain("[REDACTED]");
+            expect(rawEvent.data).toEqual(canonicalPolicyData);
+          } else {
+            // Serialized-json callers write raw JSON; the daemon redacts. The
+            // pre-normalization incoming record therefore carries the caller text
+            // verbatim (spec: Secret-handling contract).
+            expect(rawEvent.data).toEqual(policyInput);
+          }
 
           const [event] = await awaitRecords(home, created.data.sessionId, 1);
           expect(event?.data).toEqual(canonicalPolicyData);
@@ -670,111 +693,114 @@ describe("live language templates", () => {
       180_000,
     );
 
-    runtimeTest(
-      `${fixture.language} rejects cyclic values without emitting`,
-      async () => {
-        expect(fixture.runtime, `${fixture.language} runtime must be installed`).not.toBeNull();
-        const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
-        const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${fixture.language}-cycle-`));
-        temporaryDirectories.push(home, workspace);
-        const created = await createSession(home);
-        const rendered = await render(home, fixture);
-        const source = await readFile(
-          join(root, "tests", "fixtures", "languages", fixture.file),
-          "utf8",
-        );
-        await fixture.setup?.(workspace);
-        const fixturePath = join(workspace, fixture.file);
-        const capture =
-          fixture.ingest === "http" ? startCaptureProxy(created.data.ingestUrl) : undefined;
-        const target = capture?.url ?? created.data.appendPath.replaceAll("\\", "\\\\");
-
-        try {
-          await writeFile(
-            fixturePath,
-            materialize(
-              source,
-              rendered.data,
-              fixture,
-              target,
-              1,
-              fixture.cycleData,
-              fixture.cyclePrelude,
-            ),
+    // The cycle and shared-reference cases exercise the client-side value model,
+    // which only native-json-value templates carry. Serialized-json templates
+    // delegate value modeling to the caller, so these cases do not apply.
+    if (fixture.dataEncoding === "native-json-value") {
+      const { cycleData, cyclePrelude, sharedData, sharedPrelude } = fixture;
+      if (
+        cycleData === undefined ||
+        cyclePrelude === undefined ||
+        sharedData === undefined ||
+        sharedPrelude === undefined
+      ) {
+        throw new Error(`${fixture.language} is missing value-model fixture data`);
+      }
+      runtimeTest(
+        `${fixture.language} rejects cyclic values without emitting`,
+        async () => {
+          expect(fixture.runtime, `${fixture.language} runtime must be installed`).not.toBeNull();
+          const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+          const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${fixture.language}-cycle-`));
+          temporaryDirectories.push(home, workspace);
+          const created = await createSession(home);
+          const rendered = await render(home, fixture);
+          const source = await readFile(
+            join(root, "tests", "fixtures", "languages", fixture.file),
+            "utf8",
           );
-          const executed = await runSteps(fixture.command(fixturePath));
-          expect(executed.exitCode, executed.stderr).toBe(0);
-          expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
-          await Bun.sleep(200);
-          expect(capture?.bodies ?? []).toHaveLength(0);
-          const raw =
-            fixture.ingest === "file"
-              ? await readFile(created.data.appendPath, "utf8").catch(() => "")
-              : "";
-          expect(raw).toBe("");
-          const logs = await runCli(home, ["logs", "--session", created.data.sessionId, "--json"]);
-          expect(logs.exitCode, logs.stderr).toBe(0);
-          expect(JSON.parse(logs.stdout)).toMatchObject({
-            statistics: { totalRecords: 0 },
-          });
-        } finally {
-          capture?.stop();
-          await runCli(home, ["stop", "--json"]);
-        }
-      },
-      180_000,
-    );
+          await fixture.setup?.(workspace);
+          const fixturePath = join(workspace, fixture.file);
+          const capture =
+            fixture.ingest === "http" ? startCaptureProxy(created.data.ingestUrl) : undefined;
+          const target = capture?.url ?? created.data.appendPath.replaceAll("\\", "\\\\");
 
-    runtimeTest(
-      `${fixture.language} accepts shared acyclic references`,
-      async () => {
-        expect(fixture.runtime, `${fixture.language} runtime must be installed`).not.toBeNull();
-        const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
-        const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${fixture.language}-shared-`));
-        temporaryDirectories.push(home, workspace);
-        const created = await createSession(home);
-        const rendered = await render(home, fixture);
-        const source = await readFile(
-          join(root, "tests", "fixtures", "languages", fixture.file),
-          "utf8",
-        );
-        await fixture.setup?.(workspace);
-        const fixturePath = join(workspace, fixture.file);
-        const capture =
-          fixture.ingest === "http" ? startCaptureProxy(created.data.ingestUrl) : undefined;
-        const target = capture?.url ?? created.data.appendPath.replaceAll("\\", "\\\\");
+          try {
+            await writeFile(
+              fixturePath,
+              materialize(source, rendered.data, fixture, target, 1, cycleData, cyclePrelude),
+            );
+            const executed = await runSteps(fixture.command(fixturePath));
+            expect(executed.exitCode, executed.stderr).toBe(0);
+            expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
+            await Bun.sleep(200);
+            expect(capture?.bodies ?? []).toHaveLength(0);
+            const raw =
+              fixture.ingest === "file"
+                ? await readFile(created.data.appendPath, "utf8").catch(() => "")
+                : "";
+            expect(raw).toBe("");
+            const logs = await runCli(home, [
+              "logs",
+              "--session",
+              created.data.sessionId,
+              "--json",
+            ]);
+            expect(logs.exitCode, logs.stderr).toBe(0);
+            expect(JSON.parse(logs.stdout)).toMatchObject({
+              statistics: { totalRecords: 0 },
+            });
+          } finally {
+            capture?.stop();
+            await runCli(home, ["stop", "--json"]);
+          }
+        },
+        180_000,
+      );
 
-        try {
-          await writeFile(
-            fixturePath,
-            materialize(
-              source,
-              rendered.data,
-              fixture,
-              target,
-              1,
-              fixture.sharedData,
-              fixture.sharedPrelude,
-            ),
+      runtimeTest(
+        `${fixture.language} accepts shared acyclic references`,
+        async () => {
+          expect(fixture.runtime, `${fixture.language} runtime must be installed`).not.toBeNull();
+          const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+          const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${fixture.language}-shared-`));
+          temporaryDirectories.push(home, workspace);
+          const created = await createSession(home);
+          const rendered = await render(home, fixture);
+          const source = await readFile(
+            join(root, "tests", "fixtures", "languages", fixture.file),
+            "utf8",
           );
-          const executed = await runSteps(fixture.command(fixturePath));
-          expect(executed.exitCode, executed.stderr).toBe(0);
-          const raw = capture
-            ? capture.bodies.join("")
-            : await readFile(created.data.appendPath, "utf8");
-          expect(raw).not.toContain("source-shared-secret");
-          const [rawLine] = raw.trim().split("\n");
-          const rawEvent = JSON.parse(rawLine ?? "") as { data: unknown };
-          expect(rawEvent.data).toEqual(canonicalSharedPolicyData);
-          const [event] = await awaitRecords(home, created.data.sessionId, 1);
-          expect(event?.data).toEqual(canonicalSharedPolicyData);
-        } finally {
-          capture?.stop();
-          await runCli(home, ["stop", "--json"]);
-        }
-      },
-      180_000,
-    );
+          await fixture.setup?.(workspace);
+          const fixturePath = join(workspace, fixture.file);
+          const capture =
+            fixture.ingest === "http" ? startCaptureProxy(created.data.ingestUrl) : undefined;
+          const target = capture?.url ?? created.data.appendPath.replaceAll("\\", "\\\\");
+
+          try {
+            await writeFile(
+              fixturePath,
+              materialize(source, rendered.data, fixture, target, 1, sharedData, sharedPrelude),
+            );
+            const executed = await runSteps(fixture.command(fixturePath));
+            expect(executed.exitCode, executed.stderr).toBe(0);
+            const raw = capture
+              ? capture.bodies.join("")
+              : await readFile(created.data.appendPath, "utf8");
+            expect(raw).not.toContain("source-shared-secret");
+            const [rawLine] = raw.trim().split("\n");
+            const rawEvent = JSON.parse(rawLine ?? "") as { data: unknown };
+            expect(rawEvent.data).toEqual(canonicalSharedPolicyData);
+            const [event] = await awaitRecords(home, created.data.sessionId, 1);
+            expect(event?.data).toEqual(canonicalSharedPolicyData);
+          } finally {
+            capture?.stop();
+            await runCli(home, ["stop", "--json"]);
+          }
+        },
+        180_000,
+      );
+    }
   }
 
   for (const language of ["javascript", "typescript"]) {
@@ -1057,6 +1083,269 @@ describe("live language templates", () => {
       180_000,
     );
   }
+});
+
+// Serialized-JSON runtime coverage specific to Rust: the caller supplies raw
+// JSON, so these exercise the emitter's raw-value passthrough, the json_string
+// fallback, size/validity bounds, concurrency, and realistic insertion.
+describe("rust serialized-JSON template", () => {
+  const rust = fixtures.find((candidate) => candidate.language === "rust");
+  if (!rust) {
+    throw new Error("Missing rust fixture");
+  }
+  const rustFixture = rust;
+  const rustRuntimeTest = rustFixture.runtime === null && !requireRuntimes ? test.skip : test;
+
+  // Compiles the rendered helper plus a bespoke main body appending to
+  // appendPath, then runs it. Returns the process result.
+  async function compileAndRun(
+    home: string,
+    workspace: string,
+    fileName: string,
+    body: string,
+    appendPath: string,
+  ) {
+    const rendered = await render(home, rustFixture);
+    const helper = rendered.data.helperTemplate.replaceAll(
+      "__APPEND_PATH__",
+      appendPath.replaceAll("\\", "\\\\"),
+    );
+    const source = `${helper}\n\nfn main() {\n${body}\n    println!("application-completed");\n}\n`;
+    const fixturePath = join(workspace, fileName);
+    await writeFile(fixturePath, source);
+    return runSteps(rustFixture.command(fixturePath));
+  }
+
+  rustRuntimeTest(
+    "accepts serialized arrays, strings, numbers, booleans, and null",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-types-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "types.ndjson");
+      const body = [
+        '    agent_debug_mode::emit("H", "loc:1", "array", r#"[1,2,3]"#);',
+        '    agent_debug_mode::emit("H", "loc:2", "string", &agent_debug_mode::json_string("plain text"));',
+        '    agent_debug_mode::emit("H", "loc:3", "number", r#"42"#);',
+        '    agent_debug_mode::emit("H", "loc:4", "boolean", r#"true"#);',
+        '    agent_debug_mode::emit("H", "loc:5", "null", r#"null"#);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "rust-types.rs", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const lines = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const data = lines.map((line) => (JSON.parse(line) as { data: unknown }).data);
+      expect(data).toEqual([[1, 2, 3], "plain text", 42, true, null]);
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "json_string escapes quotes, backslashes, control characters, and newlines",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-escape-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "escape.ndjson");
+      // Build the tricky text from char codes so the Rust source needs no
+      // escaping: a, quote, backslash, newline, tab, U+0001, z.
+      const body = [
+        "    let mut tricky = String::new();",
+        "    tricky.push('a');",
+        "    tricky.push(char::from(34u8));",
+        "    tricky.push(char::from(92u8));",
+        "    tricky.push(char::from(10u8));",
+        "    tricky.push(char::from(9u8));",
+        "    tricky.push(char::from(1u8));",
+        "    tricky.push('z');",
+        '    agent_debug_mode::emit("H", "loc", "escape", &agent_debug_mode::json_string(&tricky));',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "rust-escape.rs", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const event = JSON.parse(line ?? "") as { data: unknown };
+      expect(event.data).toBe(`a"\\\n\tz`);
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "records malformed raw JSON as rejected without affecting the application",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-malformed-"));
+      temporaryDirectories.push(home, workspace);
+      const created = await createSession(home);
+      try {
+        const body = '    agent_debug_mode::emit("H", "loc:7", "broken", r#"{"broken":"#);';
+        const result = await compileAndRun(
+          home,
+          workspace,
+          "rust-malformed.rs",
+          body,
+          created.data.appendPath,
+        );
+        expect(result.exitCode, result.stderr).toBe(0);
+        expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+        // The daemon needs a moment to observe the incoming line and classify it.
+        let diagnostics: unknown[] = [];
+        for (let attempt = 0; attempt < 80 && diagnostics.length === 0; attempt += 1) {
+          const status = await runCli(home, [
+            "status",
+            "--session",
+            created.data.sessionId,
+            "--json",
+          ]);
+          if (status.exitCode === 0) {
+            const parsed = JSON.parse(status.stdout) as { data: { diagnostics?: unknown[] } };
+            diagnostics = parsed.data.diagnostics ?? [];
+          }
+          if (diagnostics.length === 0) {
+            await Bun.sleep(50);
+          }
+        }
+        expect(diagnostics.length).toBeGreaterThan(0);
+        const logs = await runCli(home, ["logs", "--session", created.data.sessionId, "--json"]);
+        expect(logs.exitCode, logs.stderr).toBe(0);
+        // The malformed record is counted but not accepted: no valid record is
+        // ingested, and the daemon flags exactly one malformed record.
+        expect(JSON.parse(logs.stdout)).toMatchObject({
+          statistics: { malformedRecords: 1, validRecords: 0 },
+        });
+      } finally {
+        await runCli(home, ["stop", "--json"]);
+      }
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "drops an oversize event without affecting the application",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-oversize-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "oversize.ndjson");
+      const body = [
+        '    let big = format!("[{}0]", "0,".repeat(40000));',
+        '    agent_debug_mode::emit("H", "loc", "oversize", &big);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "rust-oversize.rs", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "concurrent emitters append complete, independently parseable records",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const rustc = Bun.which("rustc");
+      expect(rustc, "rustc must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-concurrent-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "concurrent.ndjson");
+      const rendered = await render(home, rustFixture);
+      const helper = rendered.data.helperTemplate.replaceAll(
+        "__APPEND_PATH__",
+        appendPath.replaceAll("\\", "\\\\"),
+      );
+      const source = `${helper}\n\nfn main() {\n    agent_debug_mode::emit("H", "loc", "concurrent", r#"{"n":1}"#);\n}\n`;
+      const fixturePath = join(workspace, "rust-concurrent.rs");
+      const binary = join(
+        workspace,
+        process.platform === "win32" ? "rust-concurrent.exe" : "rust-concurrent.out",
+      );
+      await writeFile(fixturePath, source);
+      const compiled = await run([rustc ?? "", "-A", "warnings", fixturePath, "-o", binary]);
+      expect(compiled.exitCode, compiled.stderr).toBe(0);
+      const executions = await Promise.all(Array.from({ length: 32 }, () => run([binary])));
+      for (const execution of executions) {
+        expect(execution.exitCode, execution.stderr).toBe(0);
+      }
+      const contents = await readFile(appendPath, "utf8");
+      expect(contents.endsWith("\n")).toBe(true);
+      const lines = contents.split("\n").filter(Boolean);
+      expect(lines).toHaveLength(32);
+      for (const line of lines) {
+        expect(() => JSON.parse(line)).not.toThrow();
+      }
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "keeps metadata containing quotes and control characters valid",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-metadata-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "metadata.ndjson");
+      const body = [
+        "    let mut hid = String::new();",
+        "    hid.push('H');",
+        "    hid.push(char::from(34u8));",
+        "    hid.push(char::from(10u8));",
+        "    let mut msg = String::new();",
+        "    msg.push(char::from(9u8));",
+        '    msg.push_str("msg");',
+        "    msg.push(char::from(92u8));",
+        '    agent_debug_mode::emit(&hid, "loc", &msg, r#"{"ok":true}"#);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "rust-metadata.rs", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const event = JSON.parse(line ?? "") as {
+        hypothesisId: string;
+        message: string;
+        data: unknown;
+      };
+      expect(event.hypothesisId).toBe(`H"\n`);
+      expect(event.message).toBe(`\tmsg\\`);
+      expect(event.data).toEqual({ ok: true });
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "compiles when the helper is inserted into a realistic Rust file",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-realistic-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "realistic.ndjson");
+      const rendered = await render(home, rustFixture);
+      const source = await readFile(
+        join(root, "tests", "fixtures", "languages", "rust-realistic.rs"),
+        "utf8",
+      );
+      const materialized = materialize(
+        source,
+        rendered.data,
+        rustFixture,
+        appendPath.replaceAll("\\", "\\\\"),
+        1,
+        "&agent_debug_mode::json_string(&value.label)",
+      );
+      const fixturePath = join(workspace, "rust-realistic.rs");
+      await writeFile(fixturePath, materialized);
+      const result = await runSteps(rustFixture.command(fixturePath));
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      expect((JSON.parse(line ?? "") as { data: unknown }).data).toBe("inner-module");
+    },
+    180_000,
+  );
 });
 
 // Fault-injection coverage for the capture proxy's forward retry. This is the

@@ -26,12 +26,9 @@ const supported = [
   ["kotlin", "file"],
 ] as const satisfies readonly (readonly [TemplateLanguage, IngestMethod])[];
 
-const callPlaceholders = [
-  "__HYPOTHESIS_ID__",
-  "__LOCATION__",
-  "__MESSAGE__",
-  "__DATA_EXPRESSION__",
-] as const;
+const callMetadataPlaceholders = ["__HYPOTHESIS_ID__", "__LOCATION__", "__MESSAGE__"] as const;
+
+const serializedJsonLanguages = new Set<TemplateLanguage>(["rust"]);
 
 describe("session-independent template renderers", () => {
   for (const [language, ingest] of supported) {
@@ -41,7 +38,9 @@ describe("session-independent template renderers", () => {
       const otherTarget = ingest === "http" ? "__APPEND_PATH__" : "__INGEST_URL__";
 
       expect(template).toMatchObject({ ingest, language });
-      expect(template.dataEncoding).toBe("native-json-value");
+      expect(template.dataEncoding).toBe(
+        serializedJsonLanguages.has(language) ? "serialized-json" : "native-json-value",
+      );
       expect(template.placement.call).toBe("statement");
       expect(template.placement.helper).toBe(
         language === "c" || language === "cpp" ? "file-start" : "top-level",
@@ -50,6 +49,11 @@ describe("session-independent template renderers", () => {
       expect(template.helperTemplate).not.toContain(otherTarget);
       expect(template.callTemplate).not.toContain(target);
       expect(template.callTemplate).not.toContain(otherTarget);
+      const dataPlaceholder =
+        template.dataEncoding === "serialized-json"
+          ? "__DATA_JSON_EXPRESSION__"
+          : "__DATA_EXPRESSION__";
+      const callPlaceholders = [...callMetadataPlaceholders, dataPlaceholder];
       for (const placeholder of callPlaceholders) {
         expect(template.helperTemplate).not.toContain(placeholder);
         expect(template.callTemplate).toContain(placeholder);
@@ -63,9 +67,41 @@ describe("session-independent template renderers", () => {
       expect(template.helperTemplate).toContain("agent log");
       expect(template.callTemplate).toContain("agent log");
       expect(template.helperTemplate).toMatch(/65_?536|65536|64 \* 1024/);
-      expect(template.helperTemplate.toLowerCase()).toMatch(/active|depth/);
+      // The recursive value model carries depth/active-set bookkeeping; the
+      // serialized-JSON emitters delegate value modeling to the caller and have
+      // neither.
+      if (template.dataEncoding === "native-json-value") {
+        expect(template.helperTemplate.toLowerCase()).toMatch(/active|depth/);
+      }
     });
   }
+
+  test("rust emits serialized JSON through an isolated helper module", () => {
+    const template = renderTemplate("rust", "file");
+    expect(template.dataEncoding).toBe("serialized-json");
+    expect(template.placement).toEqual({ call: "statement", helper: "top-level" });
+    expect(template.callTemplate).toContain("__DATA_JSON_EXPRESSION__");
+    expect(template.callTemplate).not.toContain("__DATA_EXPRESSION__");
+    expect(template.helperTemplate).not.toContain("__DATA_EXPRESSION__");
+    expect(template.helperTemplate).toContain("mod agent_debug_mode");
+    expect(template.helperTemplate).toContain("65536");
+    expect(template.helperTemplate).toContain("// #region agent log");
+    expect(template.helperTemplate).toContain("// #endregion");
+    expect(template.callTemplate).toContain("// #region agent log");
+    const combined = `${template.helperTemplate}\n${template.callTemplate}`;
+    for (const removed of ["AgentValue", "AgentKind", "adbg"]) {
+      expect(combined).not.toContain(removed);
+    }
+    expect(Object.keys(template.placeholders).sort()).toEqual(
+      [
+        "__APPEND_PATH__",
+        "__DATA_JSON_EXPRESSION__",
+        "__HYPOTHESIS_ID__",
+        "__LOCATION__",
+        "__MESSAGE__",
+      ].sort(),
+    );
+  });
 
   test("HTTP helpers clean up every fulfilled response body", () => {
     for (const language of ["javascript", "typescript"]) {
