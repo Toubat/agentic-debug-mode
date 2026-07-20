@@ -117,9 +117,10 @@ The first supported combinations are:
 - Swift + file
 - Rust + file
 - C++ + file
+- C + file
 
 Every advertised combination must pass a live end-to-end test with its real runtime. Java, Kotlin,
-C, and shell are not advertised until a safe serializer contract is defined.
+and shell are not advertised until a safe serializer contract is defined.
 
 ### `debug-mode reset --session <id>`
 

@@ -148,6 +148,7 @@ advertised, end-to-end-tested combinations are:
 - Swift + file
 - Rust + file
 - C++ + file
+- C + file
 
 Other languages are not advertised until a safe serializer contract is defined.
 
@@ -268,7 +269,7 @@ visually distinct, foldable, mechanically removable, and auditable as complete b
 
 | Language/file type                | Open                   | Close           |
 | --------------------------------- | ---------------------- | --------------- |
-| JavaScript, TypeScript, Go, Swift, Rust, C++ | `// #region agent log` | `// #endregion` |
+| JavaScript, TypeScript, Go, Swift, Rust, C++, C | `// #region agent log` | `// #endregion` |
 | C#, PowerShell                    | `#region agent log`    | `#endregion`    |
 | Python, Ruby                      | `# region agent log`   | `# endregion`   |
 | PHP                               | `// #region agent log` | `// #endregion` |

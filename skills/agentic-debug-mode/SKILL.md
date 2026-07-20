@@ -115,7 +115,7 @@ with the Append Path. Advertised combinations, each verified end-to-end:
 | Python     | file   | PowerShell  | file   |
 | Go         | file   | C#          | file   |
 | Swift      | file   | Rust        | file   |
-| C++        | file   |             |        |
+| C++        | file   | C           | file   |
 
 The output has four sections: **HELPER TEMPLATE**, **CALL TEMPLATE**, **PLACEHOLDERS**, and
 **EVENT SCHEMA**.
