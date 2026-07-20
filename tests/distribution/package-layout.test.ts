@@ -16,6 +16,7 @@ interface PackageManifest {
   name: string;
   optionalDependencies?: Record<string, string>;
   os?: string[];
+  repository?: { type: string; url: string };
   version: string;
 }
 
