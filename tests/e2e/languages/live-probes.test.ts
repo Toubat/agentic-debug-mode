@@ -261,31 +261,22 @@ const fixtures: Fixture[] = [
     runtime: Bun.which("clang++") ?? Bun.which("g++"),
   },
   {
-    callData:
-      'adbg_obj("value", adbg_int(42), "designToken", adbg_str("visible-design-token"), "fortuneCookie", adbg_str("visible-fortune-cookie"), "secretSauceName", adbg_str("visible-secret-sauce"), "tokenCount", adbg_int(7), "passwordPolicy", adbg_str("visible-password-policy"), "password", adbg_str("source-password-secret"), "APIKey", adbg_str("source-api-acronym-secret"), "APIToken", adbg_str("source-api-token-secret"), "IDToken", adbg_str("source-id-token-secret"), "OAuthToken", adbg_str("source-oauth-token-secret"), "Client Secret", adbg_str("source-client-secret"), "nested", adbg_obj("apiKey", adbg_str("source-api-secret"), "items", adbg_arr(adbg_obj("refresh-token", adbg_str("source-refresh-secret"), NULL), adbg_obj("credentials", adbg_str("source-credentials-secret"), NULL), NULL), NULL), NULL)',
-    // C's AgentValue is an owned pointer tree, so a reference cycle is
-    // unrepresentable. The depth-64 cap is the analogous unbounded-structure
-    // rejection: a value nested past the cap is dropped without emitting,
-    // exactly like a cycle would be.
+    // Serialized-json call sites hand the emitter one complete raw JSON value. C
+    // has no raw-string literals, so the policy matrix (secrets included) is an
+    // escaped C string literal — the double JSON.stringify of policyInput yields
+    // exactly `"{\"value\":42,...}"`. The daemon performs redaction, so canonical
+    // evidence still equals canonicalPolicyData.
+    callData: JSON.stringify(JSON.stringify(policyInput)),
     command: (path) => {
       const compiler = Bun.which("clang") ?? Bun.which("gcc") ?? "";
       const binary = path.replace(/\.c$/, process.platform === "win32" ? ".exe" : ".out");
       return [[compiler, "-std=c99", path, "-o", binary], [binary]];
     },
-    cycleData: "__agent_cycle",
-    cyclePrelude:
-      "AgentValue *__agent_cycle = adbg_int(0); for (int __agent_depth = 0; __agent_depth < 100; __agent_depth += 1) { __agent_cycle = adbg_arr(__agent_cycle, NULL); }",
-    dataEncoding: "native-json-value",
+    dataEncoding: "serialized-json",
     file: "c-file.c",
     ingest: "file",
     language: "c",
     runtime: Bun.which("clang") ?? Bun.which("gcc"),
-    // C stores an owned pointer tree; sharing one pointer twice would double-free
-    // on cleanup, so the shared-reference case builds two independent equal
-    // subtrees (the test compares output equality, not pointer identity).
-    sharedData:
-      'adbg_obj("left", adbg_obj("APIKey", adbg_str("source-shared-secret"), NULL), "right", adbg_obj("APIKey", adbg_str("source-shared-secret"), NULL), NULL)',
-    sharedPrelude: "",
   },
   {
     callData:
@@ -1597,6 +1588,289 @@ describe("cpp serialized-JSON template", () => {
       const fixturePath = join(workspace, "cpp-realistic.cpp");
       await writeFile(fixturePath, materialized);
       const result = await runSteps(cppFixture.command(fixturePath));
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      expect((JSON.parse(line ?? "") as { data: unknown }).data).toBe("inner-module");
+    },
+    180_000,
+  );
+});
+
+// Serialized-JSON runtime coverage specific to C: the caller supplies raw JSON,
+// so these exercise the emitter's raw-value passthrough, the json_string
+// fallback, size/validity bounds, concurrency, and realistic insertion.
+describe("c serialized-JSON template", () => {
+  const c = fixtures.find((candidate) => candidate.language === "c");
+  if (!c) {
+    throw new Error("Missing c fixture");
+  }
+  const cFixture = c;
+  const cRuntimeTest = cFixture.runtime === null && !requireRuntimes ? test.skip : test;
+
+  // Compiles the rendered helper plus a bespoke main body appending to
+  // appendPath, then runs it. Returns the process result.
+  async function compileAndRun(
+    home: string,
+    workspace: string,
+    fileName: string,
+    body: string,
+    appendPath: string,
+  ) {
+    const rendered = await render(home, cFixture);
+    const helper = rendered.data.helperTemplate.replaceAll(
+      "__APPEND_PATH__",
+      appendPath.replaceAll("\\", "\\\\"),
+    );
+    const source = `${helper}\n\nint main(void) {\n${body}\n    printf("application-completed\\n");\n    return 0;\n}\n`;
+    const fixturePath = join(workspace, fileName);
+    await writeFile(fixturePath, source);
+    return runSteps(cFixture.command(fixturePath));
+  }
+
+  cRuntimeTest(
+    "accepts serialized arrays, strings, numbers, booleans, and null",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-types-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "types.ndjson");
+      const body = [
+        '    agent_debug_emit("H", "loc:1", "array", "[1,2,3]");',
+        '    agent_debug_emit("H", "loc:2", "string", agent_debug_json_string("plain text"));',
+        '    agent_debug_emit("H", "loc:3", "number", "42");',
+        '    agent_debug_emit("H", "loc:4", "boolean", "true");',
+        '    agent_debug_emit("H", "loc:5", "null", "null");',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "c-types.c", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const lines = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const data = lines.map((line) => (JSON.parse(line) as { data: unknown }).data);
+      expect(data).toEqual([[1, 2, 3], "plain text", 42, true, null]);
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "json_string escapes quotes, backslashes, control characters, and newlines",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-escape-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "escape.ndjson");
+      // Build the tricky text from char codes so the C source needs no escaping:
+      // a, quote, backslash, newline, tab, U+0001, z.
+      const body = [
+        "    char tricky[8];",
+        "    tricky[0] = 'a';",
+        "    tricky[1] = (char)34;",
+        "    tricky[2] = (char)92;",
+        "    tricky[3] = (char)10;",
+        "    tricky[4] = (char)9;",
+        "    tricky[5] = (char)1;",
+        "    tricky[6] = 'z';",
+        "    tricky[7] = 0;",
+        '    agent_debug_emit("H", "loc", "escape", agent_debug_json_string(tricky));',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "c-escape.c", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const event = JSON.parse(line ?? "") as { data: unknown };
+      const expected = `a"\\\n\t${String.fromCharCode(1)}z`;
+      expect(event.data).toBe(expected);
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "records malformed raw JSON as rejected without affecting the application",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-malformed-"));
+      temporaryDirectories.push(home, workspace);
+      const created = await createSession(home);
+      try {
+        const body = '    agent_debug_emit("H", "loc:7", "broken", "{\\"broken\\":");';
+        const result = await compileAndRun(
+          home,
+          workspace,
+          "c-malformed.c",
+          body,
+          created.data.appendPath,
+        );
+        expect(result.exitCode, result.stderr).toBe(0);
+        expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+        // The daemon needs a moment to observe the incoming line and classify it.
+        let diagnostics: unknown[] = [];
+        for (let attempt = 0; attempt < 80 && diagnostics.length === 0; attempt += 1) {
+          const status = await runCli(home, [
+            "status",
+            "--session",
+            created.data.sessionId,
+            "--json",
+          ]);
+          if (status.exitCode === 0) {
+            const parsed = JSON.parse(status.stdout) as { data: { diagnostics?: unknown[] } };
+            diagnostics = parsed.data.diagnostics ?? [];
+          }
+          if (diagnostics.length === 0) {
+            await Bun.sleep(50);
+          }
+        }
+        expect(diagnostics.length).toBeGreaterThan(0);
+        const logs = await runCli(home, ["logs", "--session", created.data.sessionId, "--json"]);
+        expect(logs.exitCode, logs.stderr).toBe(0);
+        // The malformed record is counted but not accepted: no valid record is
+        // ingested, and the daemon flags exactly one malformed record.
+        expect(JSON.parse(logs.stdout)).toMatchObject({
+          statistics: { malformedRecords: 1, validRecords: 0 },
+        });
+      } finally {
+        await runCli(home, ["stop", "--json"]);
+      }
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "drops an oversize event without affecting the application",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-oversize-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "oversize.ndjson");
+      const body = [
+        "    static char big[90002];",
+        "    size_t bi = 0;",
+        "    big[bi] = '[';",
+        "    bi += 1;",
+        "    for (int i = 0; i < 40000; i += 1) {",
+        "        big[bi] = '0';",
+        "        bi += 1;",
+        "        big[bi] = ',';",
+        "        bi += 1;",
+        "    }",
+        "    big[bi] = '0';",
+        "    bi += 1;",
+        "    big[bi] = ']';",
+        "    bi += 1;",
+        "    big[bi] = 0;",
+        '    agent_debug_emit("H", "loc", "oversize", big);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "c-oversize.c", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "concurrent emitters append complete, independently parseable records",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const compiler = Bun.which("clang") ?? Bun.which("gcc");
+      expect(compiler, "a C compiler must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-concurrent-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "concurrent.ndjson");
+      const rendered = await render(home, cFixture);
+      const helper = rendered.data.helperTemplate.replaceAll(
+        "__APPEND_PATH__",
+        appendPath.replaceAll("\\", "\\\\"),
+      );
+      const source = `${helper}\n\nint main(void) {\n    agent_debug_emit("H", "loc", "concurrent", "{\\"n\\":1}");\n    return 0;\n}\n`;
+      const fixturePath = join(workspace, "c-concurrent.c");
+      const binary = join(
+        workspace,
+        process.platform === "win32" ? "c-concurrent.exe" : "c-concurrent.out",
+      );
+      await writeFile(fixturePath, source);
+      const compiled = await run([compiler ?? "", "-std=c99", fixturePath, "-o", binary]);
+      expect(compiled.exitCode, compiled.stderr).toBe(0);
+      const executions = await Promise.all(Array.from({ length: 32 }, () => run([binary])));
+      for (const execution of executions) {
+        expect(execution.exitCode, execution.stderr).toBe(0);
+      }
+      const contents = await readFile(appendPath, "utf8");
+      expect(contents.endsWith("\n")).toBe(true);
+      const lines = contents.split("\n").filter(Boolean);
+      expect(lines).toHaveLength(32);
+      for (const line of lines) {
+        expect(() => JSON.parse(line)).not.toThrow();
+      }
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "keeps metadata containing quotes and control characters valid",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-metadata-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "metadata.ndjson");
+      const body = [
+        "    char hid[4];",
+        "    hid[0] = 'H';",
+        "    hid[1] = (char)34;",
+        "    hid[2] = (char)10;",
+        "    hid[3] = 0;",
+        "    char msg[6];",
+        "    msg[0] = (char)9;",
+        "    msg[1] = 'm';",
+        "    msg[2] = 's';",
+        "    msg[3] = 'g';",
+        "    msg[4] = (char)92;",
+        "    msg[5] = 0;",
+        '    agent_debug_emit(hid, "loc", msg, "{\\"ok\\":true}");',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "c-metadata.c", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const event = JSON.parse(line ?? "") as {
+        hypothesisId: string;
+        message: string;
+        data: unknown;
+      };
+      expect(event.hypothesisId).toBe(`H"\n`);
+      expect(event.message).toBe(`\tmsg\\`);
+      expect(event.data).toEqual({ ok: true });
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "compiles when the helper is inserted into a realistic C file",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-realistic-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "realistic.ndjson");
+      const rendered = await render(home, cFixture);
+      const source = await readFile(
+        join(root, "tests", "fixtures", "languages", "c-realistic.c"),
+        "utf8",
+      );
+      const materialized = materialize(
+        source,
+        rendered.data,
+        cFixture,
+        appendPath.replaceAll("\\", "\\\\"),
+        1,
+        "agent_debug_json_string(value.label)",
+      );
+      const fixturePath = join(workspace, "c-realistic.c");
+      await writeFile(fixturePath, materialized);
+      const result = await runSteps(cFixture.command(fixturePath));
       expect(result.exitCode, result.stderr).toBe(0);
       expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
       const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");

@@ -28,7 +28,7 @@ const supported = [
 
 const callMetadataPlaceholders = ["__HYPOTHESIS_ID__", "__LOCATION__", "__MESSAGE__"] as const;
 
-const serializedJsonLanguages = new Set<TemplateLanguage>(["rust", "cpp"]);
+const serializedJsonLanguages = new Set<TemplateLanguage>(["rust", "cpp", "c"]);
 
 describe("session-independent template renderers", () => {
   for (const [language, ingest] of supported) {
@@ -119,6 +119,37 @@ describe("session-independent template renderers", () => {
     // The deleted value model, its initializer-list object detection, and the
     // client-side secret redaction must all be gone.
     for (const removed of ["AgentValue", "AgentKind", "initializer_list", "REDACTED", "secret"]) {
+      expect(combined).not.toContain(removed);
+    }
+    expect(Object.keys(template.placeholders).sort()).toEqual(
+      [
+        "__APPEND_PATH__",
+        "__DATA_JSON_EXPRESSION__",
+        "__HYPOTHESIS_ID__",
+        "__LOCATION__",
+        "__MESSAGE__",
+      ].sort(),
+    );
+  });
+
+  test("c emits serialized JSON through a distinctively prefixed helper", () => {
+    const template = renderTemplate("c", "file");
+    expect(template.dataEncoding).toBe("serialized-json");
+    expect(template.placement).toEqual({ call: "statement", helper: "file-start" });
+    expect(template.callTemplate).toContain("__DATA_JSON_EXPRESSION__");
+    expect(template.callTemplate).not.toContain("__DATA_EXPRESSION__");
+    expect(template.helperTemplate).not.toContain("__DATA_EXPRESSION__");
+    expect(template.helperTemplate).toContain("agent_debug_emit");
+    expect(template.helperTemplate).toContain("agent_debug_json_string");
+    expect(template.helperTemplate).toContain("65536");
+    expect(template.helperTemplate).toContain("// #region agent log");
+    expect(template.helperTemplate).toContain("// #endregion");
+    expect(template.callTemplate).toContain("// #region agent log");
+    const combined = `${template.helperTemplate}\n${template.callTemplate}`;
+    // C has no namespaces, so the migration removes the old global value model,
+    // its variadic builders, and the client-side secret redaction, isolating the
+    // remaining helper behind a distinctive agent_debug_ prefix.
+    for (const removed of ["AgentValue", "AgentKind", "adbg", "REDACTED", "secret"]) {
       expect(combined).not.toContain(removed);
     }
     expect(Object.keys(template.placeholders).sort()).toEqual(
