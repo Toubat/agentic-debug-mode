@@ -206,6 +206,30 @@ const fixtures: Fixture[] = [
     sharedData: '["left": __agentShared, "right": __agentShared]',
     sharedPrelude: 'let __agentShared: [String: Any] = ["APIKey": "source-shared-secret"]',
   },
+  {
+    callData:
+      'adbg!({ "value": 42i64, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7i64, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": { "apiKey": "source-api-secret", "items": [ { "refresh-token": "source-refresh-secret" }, { "credentials": "source-credentials-secret" } ] } })',
+    // Rust's AgentValue is an owned tree, so a reference cycle is unrepresentable.
+    // The depth-64 cap is the analogous unbounded-structure rejection: a value
+    // nested past the cap is dropped without emitting, exactly like a cycle would be.
+    command: (path) => {
+      const rustc = Bun.which("rustc") ?? "";
+      const binary = path.replace(/\.rs$/, process.platform === "win32" ? ".exe" : ".out");
+      const script = `"${rustc}" -A warnings "${path}" -o "${binary}" && "${binary}"`;
+      return process.platform === "win32" ? ["cmd", "/c", script] : ["sh", "-c", script];
+    },
+    cycleData: "__agent_cycle",
+    cyclePrelude:
+      "let mut __agent_cycle = AgentValue::Int(0); let mut __agent_depth = 0; while __agent_depth < 100 { __agent_cycle = AgentValue::Array(vec![__agent_cycle]); __agent_depth += 1; }",
+    file: "rust-file.rs",
+    ingest: "file",
+    language: "rust",
+    runtime: Bun.which("rustc"),
+    sharedData:
+      'AgentValue::Object(vec![("left".to_string(), __agent_shared.clone()), ("right".to_string(), __agent_shared)])',
+    sharedPrelude:
+      'let __agent_shared = AgentValue::Object(vec![("APIKey".to_string(), AgentValue::from("source-shared-secret"))]);',
+  },
 ];
 
 async function run(command: string[], env: Record<string, string | undefined> = process.env) {

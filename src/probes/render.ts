@@ -5,6 +5,7 @@ import { renderPhpTemplate } from "./php";
 import { renderPowerShellTemplate } from "./powershell";
 import { renderPythonTemplate } from "./python";
 import { renderRubyTemplate } from "./ruby";
+import { renderRustTemplate } from "./rust";
 import { renderSwiftTemplate } from "./swift";
 import { renderTypeScriptTemplate } from "./typescript";
 
@@ -17,7 +18,8 @@ export type TemplateLanguage =
   | "php"
   | "powershell"
   | "csharp"
-  | "swift";
+  | "swift"
+  | "rust";
 
 export type IngestMethod = "http" | "file";
 
@@ -77,6 +79,9 @@ function normalizeLanguage(language: string): TemplateLanguage | undefined {
       return "csharp";
     case "swift":
       return "swift";
+    case "rust":
+    case "rs":
+      return "rust";
     default:
       return undefined;
   }
@@ -109,6 +114,8 @@ export function renderTemplate(language: string, ingest: string): ProbeTemplates
       return renderCSharpTemplate();
     case "swift:file":
       return renderSwiftTemplate();
+    case "rust:file":
+      return renderRustTemplate();
     default:
       throw new UnsupportedTemplateError(language, ingest);
   }

@@ -86,6 +86,7 @@ runtime:
 | PowerShell | file      |
 | C#         | file      |
 | Swift      | file      |
+| Rust       | file      |
 
 ## Development
 

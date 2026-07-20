@@ -115,9 +115,10 @@ The first supported combinations are:
 - PowerShell + file
 - C# + file
 - Swift + file
+- Rust + file
 
-Every advertised combination must pass a live end-to-end test with its real runtime. Rust, Java,
-Kotlin, C, C++, and shell are not advertised until a safe serializer contract is defined.
+Every advertised combination must pass a live end-to-end test with its real runtime. Java, Kotlin,
+C, C++, and shell are not advertised until a safe serializer contract is defined.
 
 ### `debug-mode reset --session <id>`
 

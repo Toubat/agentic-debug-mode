@@ -31,6 +31,7 @@ schema** for one language and transport. Templates never take `--session`.
 | PowerShell   | `powershell` (`pwsh`)       | `file` |
 | C#           | `csharp` (`cs`, `c#`)       | `file` |
 | Swift        | `swift`                     | `file` |
+| Rust         | `rust` (`rs`)               | `file` |
 
 HTTP templates use an ingest-URL placeholder; file templates use an append-path placeholder. Other
 languages are unsupported until a safe serializer contract is defined.
