@@ -36,6 +36,7 @@ export function renderCppTemplate(): ProbeTemplates {
       "",
       "    AgentValue() {}",
       "    AgentValue(bool v) { kind = AgentKind::Bool; boolValue = v; }",
+      "    AgentValue(int v) { kind = AgentKind::Int; intValue = v; }",
       "    AgentValue(long long v) { kind = AgentKind::Int; intValue = v; }",
       "    AgentValue(double v) { kind = AgentKind::Double; doubleValue = v; }",
       "    AgentValue(const char* v) { kind = AgentKind::Str; strValue = v; }",
