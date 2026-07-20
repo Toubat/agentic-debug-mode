@@ -1,3 +1,4 @@
+import { renderCppTemplate } from "./cpp";
 import { renderCSharpTemplate } from "./csharp";
 import { renderGoTemplate } from "./go";
 import { renderJavaScriptTemplate } from "./javascript";
@@ -19,7 +20,8 @@ export type TemplateLanguage =
   | "powershell"
   | "csharp"
   | "swift"
-  | "rust";
+  | "rust"
+  | "cpp";
 
 export type IngestMethod = "http" | "file";
 
@@ -82,6 +84,10 @@ function normalizeLanguage(language: string): TemplateLanguage | undefined {
     case "rust":
     case "rs":
       return "rust";
+    case "cpp":
+    case "c++":
+    case "cxx":
+      return "cpp";
     default:
       return undefined;
   }
@@ -116,6 +122,8 @@ export function renderTemplate(language: string, ingest: string): ProbeTemplates
       return renderSwiftTemplate();
     case "rust:file":
       return renderRustTemplate();
+    case "cpp:file":
+      return renderCppTemplate();
     default:
       throw new UnsupportedTemplateError(language, ingest);
   }

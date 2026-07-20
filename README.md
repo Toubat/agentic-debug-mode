@@ -87,6 +87,7 @@ runtime:
 | C#         | file      |
 | Swift      | file      |
 | Rust       | file      |
+| C++        | file      |
 
 ## Development
 

@@ -230,6 +230,29 @@ const fixtures: Fixture[] = [
     sharedPrelude:
       'let __agent_shared = AgentValue::Object(vec![("APIKey".to_string(), AgentValue::from("source-shared-secret"))]);',
   },
+  {
+    callData:
+      'AgentValue{ {"value", 42LL}, {"designToken", "visible-design-token"}, {"fortuneCookie", "visible-fortune-cookie"}, {"secretSauceName", "visible-secret-sauce"}, {"tokenCount", 7LL}, {"passwordPolicy", "visible-password-policy"}, {"password", "source-password-secret"}, {"APIKey", "source-api-acronym-secret"}, {"APIToken", "source-api-token-secret"}, {"IDToken", "source-id-token-secret"}, {"OAuthToken", "source-oauth-token-secret"}, {"Client Secret", "source-client-secret"}, {"nested", AgentValue{ {"apiKey", "source-api-secret"}, {"items", AgentValue{ AgentValue{ {"refresh-token", "source-refresh-secret"} }, AgentValue{ {"credentials", "source-credentials-secret"} } }} }} }',
+    // C++'s AgentValue is an owned value tree, so a reference cycle is
+    // unrepresentable. The depth-64 cap is the analogous unbounded-structure
+    // rejection: a value nested past the cap is dropped without emitting,
+    // exactly like a cycle would be.
+    command: (path) => {
+      const compiler = Bun.which("clang++") ?? Bun.which("g++") ?? "";
+      const binary = path.replace(/\.cpp$/, process.platform === "win32" ? ".exe" : ".out");
+      const script = `"${compiler}" -std=c++17 "${path}" -o "${binary}" && "${binary}"`;
+      return process.platform === "win32" ? ["cmd", "/c", script] : ["sh", "-c", script];
+    },
+    cycleData: "__agent_cycle",
+    cyclePrelude:
+      "AgentValue __agent_cycle = AgentValue(0LL); for (int __agent_depth = 0; __agent_depth < 100; __agent_depth += 1) { __agent_cycle = AgentValue{ __agent_cycle }; }",
+    file: "cpp-file.cpp",
+    ingest: "file",
+    language: "cpp",
+    runtime: Bun.which("clang++") ?? Bun.which("g++"),
+    sharedData: 'AgentValue{ {"left", __agent_shared}, {"right", __agent_shared} }',
+    sharedPrelude: 'AgentValue __agent_shared = AgentValue{ {"APIKey", "source-shared-secret"} };',
+  },
 ];
 
 async function run(command: string[], env: Record<string, string | undefined> = process.env) {

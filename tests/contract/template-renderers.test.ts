@@ -20,6 +20,7 @@ const supported = [
   ["csharp", "file"],
   ["swift", "file"],
   ["rust", "file"],
+  ["cpp", "file"],
 ] as const satisfies readonly (readonly [TemplateLanguage, IngestMethod])[];
 
 const callPlaceholders = [
@@ -112,6 +113,9 @@ describe("session-independent template renderers", () => {
     expect(renderTemplate("SWIFT", "FILE").language).toBe("swift");
     expect(renderTemplate("Rust", "FILE").language).toBe("rust");
     expect(renderTemplate("rs", "file").language).toBe("rust");
+    expect(renderTemplate("CPP", "FILE").language).toBe("cpp");
+    expect(renderTemplate("C++", "file").language).toBe("cpp");
+    expect(renderTemplate("cxx", "file").language).toBe("cpp");
   });
 
   test("rejects every unadvertised language and ingest pair with a typed error", () => {
@@ -126,6 +130,7 @@ describe("session-independent template renderers", () => {
       ["csharp", "http"],
       ["swift", "http"],
       ["rust", "http"],
+      ["cpp", "http"],
       ["javascript", "socket"],
     ] as const) {
       try {
