@@ -61,7 +61,11 @@ interface TemplateOutput extends ProbeTemplates {
 
 interface Fixture {
   callData: string;
-  command: (fixturePath: string) => string[];
+  // A sequence of argv steps run in order without a shell; each step must exit 0
+  // before the next runs. Compiled languages use two steps (compile, then run);
+  // interpreted languages use one. Avoiding a shell sidesteps cmd.exe quote
+  // mangling of compound "&&" command strings on Windows.
+  command: (fixturePath: string) => string[][];
   cycleData: string;
   cyclePrelude: string;
   file: string;
@@ -77,7 +81,7 @@ const fixtures: Fixture[] = [
   {
     callData:
       '{ value: 42, designToken: "visible-design-token", fortuneCookie: "visible-fortune-cookie", secretSauceName: "visible-secret-sauce", tokenCount: 7, passwordPolicy: "visible-password-policy", password: "source-password-secret", APIKey: "source-api-acronym-secret", APIToken: "source-api-token-secret", IDToken: "source-id-token-secret", OAuthToken: "source-oauth-token-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
-    command: (path) => [Bun.which("node") ?? "", path],
+    command: (path) => [[Bun.which("node") ?? "", path]],
     cycleData: "__agentCycle",
     cyclePrelude: "const __agentCycle = {}; __agentCycle.self = __agentCycle;",
     file: "javascript-http.mjs",
@@ -90,7 +94,7 @@ const fixtures: Fixture[] = [
   {
     callData:
       '{ value: 42, designToken: "visible-design-token", fortuneCookie: "visible-fortune-cookie", secretSauceName: "visible-secret-sauce", tokenCount: 7, passwordPolicy: "visible-password-policy", password: "source-password-secret", APIKey: "source-api-acronym-secret", APIToken: "source-api-token-secret", IDToken: "source-id-token-secret", OAuthToken: "source-oauth-token-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
-    command: (path) => [process.execPath, path],
+    command: (path) => [[process.execPath, path]],
     cycleData: "__agentCycle",
     cyclePrelude:
       "const __agentCycle: Record<string, unknown> = {}; __agentCycle.self = __agentCycle;",
@@ -105,7 +109,7 @@ const fixtures: Fixture[] = [
   {
     callData:
       '{"value": 42, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": {"apiKey": "source-api-secret", "items": ({"refresh-token": "source-refresh-secret"}, {"credentials": "source-credentials-secret"})}}',
-    command: (path) => [Bun.which("python3") ?? "", path],
+    command: (path) => [[Bun.which("python3") ?? "", path]],
     cycleData: "__agent_cycle",
     cyclePrelude: '__agent_cycle = {}; __agent_cycle["self"] = __agent_cycle',
     file: "python-file.py",
@@ -118,7 +122,7 @@ const fixtures: Fixture[] = [
   {
     callData:
       'map[string]any{"value": 42, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": map[string]any{"apiKey": "source-api-secret", "items": []any{map[string]string{"refresh-token": "source-refresh-secret"}, map[string]string{"credentials": "source-credentials-secret"}}}}',
-    command: (path) => [Bun.which("go") ?? "", "run", path],
+    command: (path) => [[Bun.which("go") ?? "", "run", path]],
     cycleData: "__agentCycle",
     cyclePrelude: '__agentCycle := map[string]any{}; __agentCycle["self"] = __agentCycle',
     file: "go-file.go",
@@ -131,7 +135,7 @@ const fixtures: Fixture[] = [
   {
     callData:
       '{ "value" => 42, "designToken" => "visible-design-token", "fortuneCookie" => "visible-fortune-cookie", "secretSauceName" => "visible-secret-sauce", "tokenCount" => 7, "passwordPolicy" => "visible-password-policy", "password" => "source-password-secret", "APIKey" => "source-api-acronym-secret", "APIToken" => "source-api-token-secret", "IDToken" => "source-id-token-secret", "OAuthToken" => "source-oauth-token-secret", "Client Secret" => "source-client-secret", "nested" => { "apiKey" => "source-api-secret", "items" => [{ "refresh-token" => "source-refresh-secret" }, { "credentials" => "source-credentials-secret" }] } }',
-    command: (path) => [Bun.which("ruby") ?? "", path],
+    command: (path) => [[Bun.which("ruby") ?? "", path]],
     cycleData: "__agent_cycle",
     cyclePrelude: '__agent_cycle = {}; __agent_cycle["self"] = __agent_cycle',
     file: "ruby-file.rb",
@@ -144,7 +148,7 @@ const fixtures: Fixture[] = [
   {
     callData:
       '["value" => 42, "designToken" => "visible-design-token", "fortuneCookie" => "visible-fortune-cookie", "secretSauceName" => "visible-secret-sauce", "tokenCount" => 7, "passwordPolicy" => "visible-password-policy", "password" => "source-password-secret", "APIKey" => "source-api-acronym-secret", "APIToken" => "source-api-token-secret", "IDToken" => "source-id-token-secret", "OAuthToken" => "source-oauth-token-secret", "Client Secret" => "source-client-secret", "nested" => ["apiKey" => "source-api-secret", "items" => [["refresh-token" => "source-refresh-secret"], ["credentials" => "source-credentials-secret"]]]]',
-    command: (path) => [Bun.which("php") ?? "", path],
+    command: (path) => [[Bun.which("php") ?? "", path]],
     cycleData: "$__agentCycle",
     cyclePrelude: '$__agentCycle = []; $__agentCycle["self"] = &$__agentCycle;',
     file: "php-file.php",
@@ -157,7 +161,7 @@ const fixtures: Fixture[] = [
   {
     callData:
       '@{ value = 42; designToken = "visible-design-token"; fortuneCookie = "visible-fortune-cookie"; secretSauceName = "visible-secret-sauce"; tokenCount = 7; passwordPolicy = "visible-password-policy"; password = "source-password-secret"; APIKey = "source-api-acronym-secret"; APIToken = "source-api-token-secret"; IDToken = "source-id-token-secret"; OAuthToken = "source-oauth-token-secret"; "Client Secret" = "source-client-secret"; nested = @{ apiKey = "source-api-secret"; items = @(@{ "refresh-token" = "source-refresh-secret" }, @{ credentials = "source-credentials-secret" }) } }',
-    command: (path) => [Bun.which("pwsh") ?? "", "-File", path],
+    command: (path) => [[Bun.which("pwsh") ?? "", "-File", path]],
     cycleData: "$__agentCycle",
     cyclePrelude: "$__agentCycle = @{}; $__agentCycle.self = $__agentCycle",
     file: "powershell-file.ps1",
@@ -170,7 +174,7 @@ const fixtures: Fixture[] = [
   {
     callData:
       'new Dictionary<string, object?> { ["value"] = 42, ["designToken"] = "visible-design-token", ["fortuneCookie"] = "visible-fortune-cookie", ["secretSauceName"] = "visible-secret-sauce", ["tokenCount"] = 7, ["passwordPolicy"] = "visible-password-policy", ["password"] = "source-password-secret", ["APIKey"] = "source-api-acronym-secret", ["APIToken"] = "source-api-token-secret", ["IDToken"] = "source-id-token-secret", ["OAuthToken"] = "source-oauth-token-secret", ["Client Secret"] = "source-client-secret", ["nested"] = new Dictionary<string, object?> { ["apiKey"] = "source-api-secret", ["items"] = new object?[] { new Dictionary<string, object?> { ["refresh-token"] = "source-refresh-secret" }, new Dictionary<string, object?> { ["credentials"] = "source-credentials-secret" } } } }',
-    command: (path) => [Bun.which("dotnet") ?? "", "run", "--project", join(path, "..")],
+    command: (path) => [[Bun.which("dotnet") ?? "", "run", "--project", join(path, "..")]],
     cycleData: "__agentCycle",
     cyclePrelude:
       'var __agentCycle = new Dictionary<string, object?>(); __agentCycle["self"] = __agentCycle;',
@@ -196,7 +200,7 @@ const fixtures: Fixture[] = [
   {
     callData:
       '["value": 42, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": ["apiKey": "source-api-secret", "items": [["refresh-token": "source-refresh-secret"], ["credentials": "source-credentials-secret"]]]]',
-    command: (path) => [Bun.which("swift") ?? "", path],
+    command: (path) => [[Bun.which("swift") ?? "", path]],
     cycleData: "__agentCycle",
     cyclePrelude: 'let __agentCycle = NSMutableDictionary(); __agentCycle["self"] = __agentCycle',
     file: "swift-file.swift",
@@ -215,8 +219,7 @@ const fixtures: Fixture[] = [
     command: (path) => {
       const rustc = Bun.which("rustc") ?? "";
       const binary = path.replace(/\.rs$/, process.platform === "win32" ? ".exe" : ".out");
-      const script = `"${rustc}" -A warnings "${path}" -o "${binary}" && "${binary}"`;
-      return process.platform === "win32" ? ["cmd", "/c", script] : ["sh", "-c", script];
+      return [[rustc, "-A", "warnings", path, "-o", binary], [binary]];
     },
     cycleData: "__agent_cycle",
     cyclePrelude:
@@ -240,12 +243,16 @@ const fixtures: Fixture[] = [
     command: (path) => {
       const compiler = Bun.which("clang++") ?? Bun.which("g++") ?? "";
       const binary = path.replace(/\.cpp$/, process.platform === "win32" ? ".exe" : ".out");
-      const script = `"${compiler}" -std=c++17 "${path}" -o "${binary}" && "${binary}"`;
-      return process.platform === "win32" ? ["cmd", "/c", script] : ["sh", "-c", script];
+      return [[compiler, "-std=c++17", path, "-o", binary], [binary]];
     },
     cycleData: "__agent_cycle",
+    // Build the deep structure by explicitly appending to arrayValue rather than
+    // AgentValue{ __agent_cycle }: a single-element braced-init-list is ambiguous
+    // between the initializer_list<AgentValue> constructor and the copy
+    // constructor, and compilers disagree on which wins (Apple clang wraps,
+    // clang 18 / gcc 13 copy), so the nesting depth would vary by toolchain.
     cyclePrelude:
-      "AgentValue __agent_cycle = AgentValue(0LL); for (int __agent_depth = 0; __agent_depth < 100; __agent_depth += 1) { __agent_cycle = AgentValue{ __agent_cycle }; }",
+      "AgentValue __agent_cycle = AgentValue(0LL); for (int __agent_depth = 0; __agent_depth < 100; __agent_depth += 1) { AgentValue __agent_wrap; __agent_wrap.kind = AgentKind::Array; __agent_wrap.arrayValue.push_back(__agent_cycle); __agent_cycle = __agent_wrap; }",
     file: "cpp-file.cpp",
     ingest: "file",
     language: "cpp",
@@ -263,8 +270,7 @@ const fixtures: Fixture[] = [
     command: (path) => {
       const compiler = Bun.which("clang") ?? Bun.which("gcc") ?? "";
       const binary = path.replace(/\.c$/, process.platform === "win32" ? ".exe" : ".out");
-      const script = `"${compiler}" -std=c99 "${path}" -o "${binary}" && "${binary}"`;
-      return process.platform === "win32" ? ["cmd", "/c", script] : ["sh", "-c", script];
+      return [[compiler, "-std=c99", path, "-o", binary], [binary]];
     },
     cycleData: "__agent_cycle",
     cyclePrelude:
@@ -283,7 +289,7 @@ const fixtures: Fixture[] = [
   {
     callData:
       'java.util.Map.ofEntries(java.util.Map.entry("value", 42), java.util.Map.entry("designToken", "visible-design-token"), java.util.Map.entry("fortuneCookie", "visible-fortune-cookie"), java.util.Map.entry("secretSauceName", "visible-secret-sauce"), java.util.Map.entry("tokenCount", 7), java.util.Map.entry("passwordPolicy", "visible-password-policy"), java.util.Map.entry("password", "source-password-secret"), java.util.Map.entry("APIKey", "source-api-acronym-secret"), java.util.Map.entry("APIToken", "source-api-token-secret"), java.util.Map.entry("IDToken", "source-id-token-secret"), java.util.Map.entry("OAuthToken", "source-oauth-token-secret"), java.util.Map.entry("Client Secret", "source-client-secret"), java.util.Map.entry("nested", java.util.Map.ofEntries(java.util.Map.entry("apiKey", "source-api-secret"), java.util.Map.entry("items", java.util.List.of(java.util.Map.of("refresh-token", "source-refresh-secret"), java.util.Map.of("credentials", "source-credentials-secret"))))))',
-    command: (path) => [Bun.which("java") ?? "", path],
+    command: (path) => [[Bun.which("java") ?? "", path]],
     cycleData: "__agentCycle",
     cyclePrelude:
       'java.util.Map<String, Object> __agentCycle = new java.util.LinkedHashMap<>(); __agentCycle.put("self", __agentCycle);',
@@ -302,8 +308,14 @@ const fixtures: Fixture[] = [
       const kotlinc = Bun.which("kotlinc") ?? "";
       const java = Bun.which("java") ?? "";
       const jar = path.replace(/\.kt$/, ".jar");
-      const script = `"${kotlinc}" -include-runtime -d "${jar}" "${path}" && "${java}" -jar "${jar}"`;
-      return process.platform === "win32" ? ["cmd", "/c", script] : ["sh", "-c", script];
+      // On Windows kotlinc resolves to kotlinc.bat, which cmd.exe must interpret;
+      // passing the batch path and its arguments as separate argv elements lets
+      // Bun quote each one correctly instead of mangling a compound string.
+      const compile =
+        process.platform === "win32"
+          ? ["cmd", "/c", kotlinc, "-include-runtime", "-d", jar, path]
+          : [kotlinc, "-include-runtime", "-d", jar, path];
+      return [compile, [java, "-jar", jar]];
     },
     cycleData: "__agentCycle",
     cyclePrelude:
@@ -331,6 +343,25 @@ async function run(command: string[], env: Record<string, string | undefined> = 
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
   ]);
+  return { exitCode, stderr, stdout };
+}
+
+// Runs argv steps in order, concatenating their output. Stops at the first step
+// that exits non-zero and returns its exit code, so a failed compile surfaces
+// the compiler's stderr and the run step never executes.
+async function runSteps(steps: string[][], env: Record<string, string | undefined> = process.env) {
+  let exitCode = 0;
+  let stdout = "";
+  let stderr = "";
+  for (const step of steps) {
+    const result = await run(step, env);
+    stdout += result.stdout;
+    stderr += result.stderr;
+    exitCode = result.exitCode;
+    if (exitCode !== 0) {
+      break;
+    }
+  }
   return { exitCode, stderr, stdout };
 }
 
@@ -564,7 +595,7 @@ describe("live language templates", () => {
           await writeFile(fixturePath, materialize(source, rendered.data, fixture, target));
 
           const startedAt = Date.now();
-          const executed = await run(fixture.command(fixturePath));
+          const executed = await runSteps(fixture.command(fixturePath));
           const finishedAt = Date.now();
           expect(executed.exitCode, executed.stderr).toBe(0);
           const raw = capture
@@ -632,7 +663,7 @@ describe("live language templates", () => {
           materialize(source, rendered.data, fixture, unavailableTarget),
         );
 
-        const executed = await run(fixture.command(fixturePath));
+        const executed = await runSteps(fixture.command(fixturePath));
         expect(executed.exitCode, executed.stderr).toBe(0);
         expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
       },
@@ -671,7 +702,7 @@ describe("live language templates", () => {
               fixture.cyclePrelude,
             ),
           );
-          const executed = await run(fixture.command(fixturePath));
+          const executed = await runSteps(fixture.command(fixturePath));
           expect(executed.exitCode, executed.stderr).toBe(0);
           expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
           await Bun.sleep(200);
@@ -726,7 +757,7 @@ describe("live language templates", () => {
               fixture.sharedPrelude,
             ),
           );
-          const executed = await run(fixture.command(fixturePath));
+          const executed = await runSteps(fixture.command(fixturePath));
           expect(executed.exitCode, executed.stderr).toBe(0);
           const raw = capture
             ? capture.bodies.join("")
@@ -810,7 +841,7 @@ describe("live language templates", () => {
         const fixturePath = join(workspace, fixture.file);
         await writeFile(fixturePath, materialize(source, rendered.data, fixture, capture.url, 200));
 
-        const executed = await run(fixture.command(fixturePath));
+        const executed = await runSteps(fixture.command(fixturePath));
         expect(executed.exitCode, executed.stderr).toBe(0);
         expect(executed.stdout).toContain("cleanup-count:200");
         expect(capture.bodies).toHaveLength(200);
@@ -959,7 +990,7 @@ describe("live language templates", () => {
         );
 
         try {
-          const executed = await run(fixture.command(fixturePath));
+          const executed = await runSteps(fixture.command(fixturePath));
           expect(executed.exitCode, executed.stderr).toBe(0);
           const raw = await readFile(created.data.appendPath, "utf8");
           expect(raw).not.toContain("source-value-api-secret");
