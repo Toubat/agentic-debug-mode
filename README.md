@@ -88,6 +88,7 @@ runtime:
 | Swift      | file      |
 | Rust       | file      |
 | C++        | file      |
+| C          | file      |
 
 ## Development
 

@@ -253,6 +253,33 @@ const fixtures: Fixture[] = [
     sharedData: 'AgentValue{ {"left", __agent_shared}, {"right", __agent_shared} }',
     sharedPrelude: 'AgentValue __agent_shared = AgentValue{ {"APIKey", "source-shared-secret"} };',
   },
+  {
+    callData:
+      'adbg_obj("value", adbg_int(42), "designToken", adbg_str("visible-design-token"), "fortuneCookie", adbg_str("visible-fortune-cookie"), "secretSauceName", adbg_str("visible-secret-sauce"), "tokenCount", adbg_int(7), "passwordPolicy", adbg_str("visible-password-policy"), "password", adbg_str("source-password-secret"), "APIKey", adbg_str("source-api-acronym-secret"), "APIToken", adbg_str("source-api-token-secret"), "IDToken", adbg_str("source-id-token-secret"), "OAuthToken", adbg_str("source-oauth-token-secret"), "Client Secret", adbg_str("source-client-secret"), "nested", adbg_obj("apiKey", adbg_str("source-api-secret"), "items", adbg_arr(adbg_obj("refresh-token", adbg_str("source-refresh-secret"), NULL), adbg_obj("credentials", adbg_str("source-credentials-secret"), NULL), NULL), NULL), NULL)',
+    // C's AgentValue is an owned pointer tree, so a reference cycle is
+    // unrepresentable. The depth-64 cap is the analogous unbounded-structure
+    // rejection: a value nested past the cap is dropped without emitting,
+    // exactly like a cycle would be.
+    command: (path) => {
+      const compiler = Bun.which("clang") ?? Bun.which("gcc") ?? "";
+      const binary = path.replace(/\.c$/, process.platform === "win32" ? ".exe" : ".out");
+      const script = `"${compiler}" -std=c99 "${path}" -o "${binary}" && "${binary}"`;
+      return process.platform === "win32" ? ["cmd", "/c", script] : ["sh", "-c", script];
+    },
+    cycleData: "__agent_cycle",
+    cyclePrelude:
+      "AgentValue *__agent_cycle = adbg_int(0); for (int __agent_depth = 0; __agent_depth < 100; __agent_depth += 1) { __agent_cycle = adbg_arr(__agent_cycle, NULL); }",
+    file: "c-file.c",
+    ingest: "file",
+    language: "c",
+    runtime: Bun.which("clang") ?? Bun.which("gcc"),
+    // C stores an owned pointer tree; sharing one pointer twice would double-free
+    // on cleanup, so the shared-reference case builds two independent equal
+    // subtrees (the test compares output equality, not pointer identity).
+    sharedData:
+      'adbg_obj("left", adbg_obj("APIKey", adbg_str("source-shared-secret"), NULL), "right", adbg_obj("APIKey", adbg_str("source-shared-secret"), NULL), NULL)',
+    sharedPrelude: "",
+  },
 ];
 
 async function run(command: string[], env: Record<string, string | undefined> = process.env) {

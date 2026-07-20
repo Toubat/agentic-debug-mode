@@ -33,6 +33,7 @@ schema** for one language and transport. Templates never take `--session`.
 | Swift        | `swift`                     | `file` |
 | Rust         | `rust` (`rs`)               | `file` |
 | C++          | `cpp` (`c++`, `cxx`)        | `file` |
+| C            | `c`                         | `file` |
 
 HTTP templates use an ingest-URL placeholder; file templates use an append-path placeholder. Other
 languages are unsupported until a safe serializer contract is defined.
