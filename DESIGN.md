@@ -119,6 +119,7 @@ The first supported combinations are:
 - C++ + file
 - C + file
 - Java + file
+- Kotlin + file
 
 Every advertised combination must pass a live end-to-end test with its real runtime. Kotlin and
 shell are not advertised until a safe serializer contract is defined.

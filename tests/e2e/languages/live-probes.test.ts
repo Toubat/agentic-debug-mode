@@ -295,6 +295,28 @@ const fixtures: Fixture[] = [
     sharedPrelude:
       'java.util.Map<String, Object> __agentShared = new java.util.LinkedHashMap<>(); __agentShared.put("APIKey", "source-shared-secret");',
   },
+  {
+    callData:
+      'mapOf("value" to 42, "designToken" to "visible-design-token", "fortuneCookie" to "visible-fortune-cookie", "secretSauceName" to "visible-secret-sauce", "tokenCount" to 7, "passwordPolicy" to "visible-password-policy", "password" to "source-password-secret", "APIKey" to "source-api-acronym-secret", "APIToken" to "source-api-token-secret", "IDToken" to "source-id-token-secret", "OAuthToken" to "source-oauth-token-secret", "Client Secret" to "source-client-secret", "nested" to mapOf("apiKey" to "source-api-secret", "items" to listOf(mapOf("refresh-token" to "source-refresh-secret"), mapOf("credentials" to "source-credentials-secret"))))',
+    command: (path) => {
+      const kotlinc = Bun.which("kotlinc") ?? "";
+      const java = Bun.which("java") ?? "";
+      const jar = path.replace(/\.kt$/, ".jar");
+      const script = `"${kotlinc}" -include-runtime -d "${jar}" "${path}" && "${java}" -jar "${jar}"`;
+      return process.platform === "win32" ? ["cmd", "/c", script] : ["sh", "-c", script];
+    },
+    cycleData: "__agentCycle",
+    cyclePrelude:
+      'val __agentCycle = java.util.LinkedHashMap<String, Any>(); __agentCycle.put("self", __agentCycle)',
+    file: "kotlin-file.kt",
+    ingest: "file",
+    language: "kotlin",
+    runtime:
+      Bun.which("kotlinc") !== null && Bun.which("java") !== null ? Bun.which("kotlinc") : null,
+    sharedData: 'mapOf("left" to __agentShared, "right" to __agentShared)',
+    sharedPrelude:
+      'val __agentShared = java.util.LinkedHashMap<String, Any>(); __agentShared.put("APIKey", "source-shared-secret")',
+  },
 ];
 
 async function run(command: string[], env: Record<string, string | undefined> = process.env) {
@@ -584,7 +606,7 @@ describe("live language templates", () => {
           await runCli(home, ["stop", "--json"]);
         }
       },
-      90_000,
+      180_000,
     );
 
     runtimeTest(
@@ -614,7 +636,7 @@ describe("live language templates", () => {
         expect(executed.exitCode, executed.stderr).toBe(0);
         expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
       },
-      90_000,
+      180_000,
     );
 
     runtimeTest(
@@ -669,7 +691,7 @@ describe("live language templates", () => {
           await runCli(home, ["stop", "--json"]);
         }
       },
-      90_000,
+      180_000,
     );
 
     runtimeTest(
@@ -720,7 +742,7 @@ describe("live language templates", () => {
           await runCli(home, ["stop", "--json"]);
         }
       },
-      90_000,
+      180_000,
     );
   }
 
@@ -859,6 +881,22 @@ describe("live language templates", () => {
         "}",
       ].join("\n"),
     },
+    kotlin: {
+      dataExpression: "__agentValue",
+      prelude: [
+        "val __agentValue = AgentCustomValue()",
+        '__agentValue.APIKey = "source-value-api-secret"',
+        '__agentValue.designToken = "visible-value-design-token"',
+        '__agentValue.Nested = java.util.Map.of("OAuthToken", "source-value-oauth-secret")',
+      ].join("\n"),
+      extraTypes: [
+        "class AgentCustomValue {",
+        '    @JvmField var APIKey: String = ""',
+        '    @JvmField var Nested: Any = ""',
+        '    @JvmField var designToken: String = ""',
+        "}",
+      ].join("\n"),
+    },
     powershell: {
       dataExpression: "$__agentValue",
       prelude: [
@@ -877,7 +915,7 @@ describe("live language templates", () => {
     },
   };
 
-  for (const language of ["csharp", "powershell", "java"]) {
+  for (const language of ["csharp", "powershell", "java", "kotlin"]) {
     const fixture = fixtures.find((candidate) => candidate.language === language);
     const unavailable = fixture?.runtime === null;
     const runtimeTest = unavailable && !requireRuntimes ? test.skip : test;
@@ -939,7 +977,7 @@ describe("live language templates", () => {
           await runCli(home, ["stop", "--json"]);
         }
       },
-      90_000,
+      180_000,
     );
   }
 
@@ -985,7 +1023,7 @@ describe("live language templates", () => {
           expect(() => JSON.parse(line)).not.toThrow();
         }
       },
-      90_000,
+      180_000,
     );
   }
 });

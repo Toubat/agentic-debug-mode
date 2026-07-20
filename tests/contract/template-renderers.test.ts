@@ -23,6 +23,7 @@ const supported = [
   ["cpp", "file"],
   ["c", "file"],
   ["java", "file"],
+  ["kotlin", "file"],
 ] as const satisfies readonly (readonly [TemplateLanguage, IngestMethod])[];
 
 const callPlaceholders = [
@@ -122,6 +123,8 @@ describe("session-independent template renderers", () => {
     expect(renderTemplate("c", "file").language).toBe("c");
     expect(renderTemplate("Java", "FILE").language).toBe("java");
     expect(renderTemplate("java", "file").language).toBe("java");
+    expect(renderTemplate("Kotlin", "FILE").language).toBe("kotlin");
+    expect(renderTemplate("kt", "file").language).toBe("kotlin");
   });
 
   test("rejects every unadvertised language and ingest pair with a typed error", () => {
@@ -139,6 +142,7 @@ describe("session-independent template renderers", () => {
       ["cpp", "http"],
       ["c", "http"],
       ["java", "http"],
+      ["kotlin", "http"],
       ["javascript", "socket"],
     ] as const) {
       try {
