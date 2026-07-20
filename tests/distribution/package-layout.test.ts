@@ -81,6 +81,9 @@ describe("release definitions", () => {
     expect(formula).toContain("agentic-debug-mode-darwin-arm64.tar.gz");
     expect(formula).toContain("agentic-debug-mode-darwin-x64.tar.gz");
     expect(formula.match(/sha256/g)).toHaveLength(2);
+    // Download URLs must point at the real repository slug.
+    expect(formula).toContain("github.com/Toubat/agentic-debug-mode");
+    expect(formula).not.toContain("Toubat/debug-mode");
   });
 
   test("CI and release workflows cover all supported targets", async () => {
@@ -114,6 +117,10 @@ describe("release definitions", () => {
     expect(release).toContain("agentic-debug-mode.spdx.json");
     expect(release).toContain("cosign sign-blob");
     expect(release).toContain("checksums.txt.sig");
+    // The rendered formula is committed to the in-repo tap (Formula/) so
+    // `brew tap Toubat/agentic-debug-mode https://github.com/Toubat/agentic-debug-mode`
+    // can install it.
+    expect(release).toContain("Formula/agentic-debug-mode.rb");
     // npm publishes authenticate via Trusted Publishing (GitHub OIDC), never
     // via long-lived registry tokens.
     expect(release).not.toContain("NPM_TOKEN");

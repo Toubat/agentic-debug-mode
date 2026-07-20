@@ -182,3 +182,19 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: release/*
+      - name: Publish Homebrew formula to the in-repo tap
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          mkdir -p Formula
+          cp release/agentic-debug-mode.rb Formula/agentic-debug-mode.rb
+          if git diff --quiet -- Formula/agentic-debug-mode.rb; then
+            echo "formula unchanged; skipping"
+          else
+            git add Formula/agentic-debug-mode.rb
+            git commit -m "chore: publish Homebrew formula for ${{ github.event.inputs.tag || github.ref_name }} [skip ci]"
+            git push origin main
+          fi
