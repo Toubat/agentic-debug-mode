@@ -280,6 +280,21 @@ const fixtures: Fixture[] = [
       'adbg_obj("left", adbg_obj("APIKey", adbg_str("source-shared-secret"), NULL), "right", adbg_obj("APIKey", adbg_str("source-shared-secret"), NULL), NULL)',
     sharedPrelude: "",
   },
+  {
+    callData:
+      'java.util.Map.ofEntries(java.util.Map.entry("value", 42), java.util.Map.entry("designToken", "visible-design-token"), java.util.Map.entry("fortuneCookie", "visible-fortune-cookie"), java.util.Map.entry("secretSauceName", "visible-secret-sauce"), java.util.Map.entry("tokenCount", 7), java.util.Map.entry("passwordPolicy", "visible-password-policy"), java.util.Map.entry("password", "source-password-secret"), java.util.Map.entry("APIKey", "source-api-acronym-secret"), java.util.Map.entry("APIToken", "source-api-token-secret"), java.util.Map.entry("IDToken", "source-id-token-secret"), java.util.Map.entry("OAuthToken", "source-oauth-token-secret"), java.util.Map.entry("Client Secret", "source-client-secret"), java.util.Map.entry("nested", java.util.Map.ofEntries(java.util.Map.entry("apiKey", "source-api-secret"), java.util.Map.entry("items", java.util.List.of(java.util.Map.of("refresh-token", "source-refresh-secret"), java.util.Map.of("credentials", "source-credentials-secret"))))))',
+    command: (path) => [Bun.which("java") ?? "", path],
+    cycleData: "__agentCycle",
+    cyclePrelude:
+      'java.util.Map<String, Object> __agentCycle = new java.util.LinkedHashMap<>(); __agentCycle.put("self", __agentCycle);',
+    file: "java-file.java",
+    ingest: "file",
+    language: "java",
+    runtime: Bun.which("java"),
+    sharedData: 'java.util.Map.of("left", __agentShared, "right", __agentShared)',
+    sharedPrelude:
+      'java.util.Map<String, Object> __agentShared = new java.util.LinkedHashMap<>(); __agentShared.put("APIKey", "source-shared-secret");',
+  },
 ];
 
 async function run(command: string[], env: Record<string, string | undefined> = process.env) {
@@ -800,16 +815,82 @@ describe("live language templates", () => {
     }, 120_000);
   }
 
-  for (const language of ["csharp", "powershell"]) {
+  // Per-language custom-object coverage: C# and PowerShell exercise value types
+  // (structs) so the redactor inspects their members instead of treating them as
+  // atomic; Java has no value types, so it exercises the reflection path over a
+  // plain object's public fields — the only case that reaches the reflection
+  // branch, since the shared policy matrix uses maps and lists throughout.
+  const valueTypeCases: Record<
+    string,
+    { dataExpression: string; prelude: string; extraTypes?: string }
+  > = {
+    csharp: {
+      dataExpression: "__agentValue",
+      prelude: [
+        "var __agentValue = new AgentCustomValue",
+        "{",
+        '    APIKey = "source-value-api-secret",',
+        '    designToken = "visible-value-design-token",',
+        '    Nested = new Dictionary<string, object?> { ["OAuthToken"] = "source-value-oauth-secret" },',
+        "};",
+      ].join("\n"),
+      extraTypes: [
+        "internal struct AgentCustomValue",
+        "{",
+        "    public string APIKey { get; init; }",
+        "    public Dictionary<string, object?> Nested;",
+        "    public string designToken;",
+        "}",
+      ].join("\n"),
+    },
+    java: {
+      dataExpression: "__agentValue",
+      prelude: [
+        "AgentCustomValue __agentValue = new AgentCustomValue();",
+        '__agentValue.APIKey = "source-value-api-secret";',
+        '__agentValue.designToken = "visible-value-design-token";',
+        '__agentValue.Nested = java.util.Map.of("OAuthToken", "source-value-oauth-secret");',
+      ].join("\n"),
+      extraTypes: [
+        "static class AgentCustomValue {",
+        "    public String APIKey;",
+        "    public Object Nested;",
+        "    public String designToken;",
+        "}",
+      ].join("\n"),
+    },
+    powershell: {
+      dataExpression: "$__agentValue",
+      prelude: [
+        "Add-Type -TypeDefinition @'",
+        "public struct AgentCustomValue {",
+        "    public string APIKey { get; set; }",
+        "    public object Nested { get; set; }",
+        "    public string designToken;",
+        "}",
+        "'@",
+        "$__agentValue = [AgentCustomValue]::new()",
+        '$__agentValue.APIKey = "source-value-api-secret"',
+        '$__agentValue.designToken = "visible-value-design-token"',
+        '$__agentValue.Nested = @{ OAuthToken = "source-value-oauth-secret" }',
+      ].join("\n"),
+    },
+  };
+
+  for (const language of ["csharp", "powershell", "java"]) {
     const fixture = fixtures.find((candidate) => candidate.language === language);
     const unavailable = fixture?.runtime === null;
     const runtimeTest = unavailable && !requireRuntimes ? test.skip : test;
+    const valueTypeCase = valueTypeCases[language];
 
     runtimeTest(
       `${language} redacts custom value-type members`,
       async () => {
         if (!fixture) {
           throw new Error(`Missing ${language} fixture`);
+        }
+        if (!valueTypeCase) {
+          throw new Error(`Missing ${language} value-type case`);
         }
         expect(fixture.runtime, `${language} runtime must be installed`).not.toBeNull();
         const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
@@ -823,41 +904,8 @@ describe("live language templates", () => {
         );
         await fixture.setup?.(workspace);
         const fixturePath = join(workspace, fixture.file);
-        const isCSharp = language === "csharp";
-        const prelude = isCSharp
-          ? [
-              "var __agentValue = new AgentCustomValue",
-              "{",
-              '    APIKey = "source-value-api-secret",',
-              '    designToken = "visible-value-design-token",',
-              '    Nested = new Dictionary<string, object?> { ["OAuthToken"] = "source-value-oauth-secret" },',
-              "};",
-            ].join("\n")
-          : [
-              "Add-Type -TypeDefinition @'",
-              "public struct AgentCustomValue {",
-              "    public string APIKey { get; set; }",
-              "    public object Nested { get; set; }",
-              "    public string designToken;",
-              "}",
-              "'@",
-              "$__agentValue = [AgentCustomValue]::new()",
-              '$__agentValue.APIKey = "source-value-api-secret"',
-              '$__agentValue.designToken = "visible-value-design-token"',
-              '$__agentValue.Nested = @{ OAuthToken = "source-value-oauth-secret" }',
-            ].join("\n");
-        if (isCSharp) {
-          source = source.replace(
-            "/* __EXTRA_TYPES__ */",
-            [
-              "internal struct AgentCustomValue",
-              "{",
-              "    public string APIKey { get; init; }",
-              "    public Dictionary<string, object?> Nested;",
-              "    public string designToken;",
-              "}",
-            ].join("\n"),
-          );
+        if (valueTypeCase.extraTypes) {
+          source = source.replace("/* __EXTRA_TYPES__ */", valueTypeCase.extraTypes);
         }
         await writeFile(
           fixturePath,
@@ -867,8 +915,8 @@ describe("live language templates", () => {
             fixture,
             created.data.appendPath.replaceAll("\\", "\\\\"),
             1,
-            isCSharp ? "__agentValue" : "$__agentValue",
-            prelude,
+            valueTypeCase.dataExpression,
+            valueTypeCase.prelude,
           ),
         );
 
