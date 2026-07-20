@@ -35,6 +35,7 @@ schema** for one language and transport. Templates never take `--session`.
 | C++          | `cpp` (`c++`, `cxx`)        | `file` |
 | C            | `c`                         | `file` |
 | Java         | `java`                      | `file` |
+| Kotlin       | `kotlin` (`kt`)             | `file` |
 
 HTTP templates use an ingest-URL placeholder; file templates use an append-path placeholder. Other
 languages are unsupported until a safe serializer contract is defined.

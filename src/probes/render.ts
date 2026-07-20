@@ -4,6 +4,7 @@ import { renderCSharpTemplate } from "./csharp";
 import { renderGoTemplate } from "./go";
 import { renderJavaTemplate } from "./java";
 import { renderJavaScriptTemplate } from "./javascript";
+import { renderKotlinTemplate } from "./kotlin";
 import { renderPhpTemplate } from "./php";
 import { renderPowerShellTemplate } from "./powershell";
 import { renderPythonTemplate } from "./python";
@@ -25,7 +26,8 @@ export type TemplateLanguage =
   | "rust"
   | "cpp"
   | "c"
-  | "java";
+  | "java"
+  | "kotlin";
 
 export type IngestMethod = "http" | "file";
 
@@ -96,6 +98,9 @@ function normalizeLanguage(language: string): TemplateLanguage | undefined {
       return "c";
     case "java":
       return "java";
+    case "kotlin":
+    case "kt":
+      return "kotlin";
     default:
       return undefined;
   }
@@ -136,6 +141,8 @@ export function renderTemplate(language: string, ingest: string): ProbeTemplates
       return renderCTemplate();
     case "java:file":
       return renderJavaTemplate();
+    case "kotlin:file":
+      return renderKotlinTemplate();
     default:
       throw new UnsupportedTemplateError(language, ingest);
   }
