@@ -10,6 +10,7 @@ export function renderRustTemplate(): ProbeTemplates {
     helperTemplate: [
       "// #region agent log",
       "#[derive(Clone)]",
+      "#[allow(dead_code)]",
       "enum AgentValue {",
       "    Null,",
       "    Bool(bool),",
@@ -236,6 +237,7 @@ export function renderRustTemplate(): ProbeTemplates {
       "    }",
       "}",
       "",
+      "#[allow(non_snake_case)]",
       "fn __agentDebugEmit(hypothesis_id: &str, location: &str, message: &str, data: AgentValue) {",
       "    let mut out = String::new();",
       "    out.push('{');",
