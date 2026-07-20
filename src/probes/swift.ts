@@ -88,6 +88,8 @@ export function renderSwiftTemplate(): ProbeTemplates {
     ].join("\n"),
     ingest: "file",
     language: "swift",
+    dataEncoding: "native-json-value",
+    placement: { call: "statement", helper: "top-level" },
     placeholders: {
       __APPEND_PATH__: "Replace with the appendPath returned by debug-mode create.",
       __DATA_EXPRESSION__: "Replace with a JSON-compatible Swift expression that has no secrets.",

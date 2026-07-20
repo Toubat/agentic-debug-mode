@@ -283,6 +283,8 @@ export function renderRustTemplate(): ProbeTemplates {
     ].join("\n"),
     ingest: "file",
     language: "rust",
+    dataEncoding: "native-json-value",
+    placement: { call: "statement", helper: "top-level" },
     placeholders: {
       __APPEND_PATH__: "Replace with the appendPath returned by debug-mode create.",
       __DATA_EXPRESSION__: "Replace with a JSON-compatible Rust AgentValue that has no secrets.",

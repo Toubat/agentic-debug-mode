@@ -31,12 +31,19 @@ export type TemplateLanguage =
 
 export type IngestMethod = "http" | "file";
 
+export type ProbeDataEncoding = "native-json-value" | "serialized-json";
+
 export interface ProbeTemplates {
   language: TemplateLanguage;
   ingest: IngestMethod;
+  dataEncoding: ProbeDataEncoding;
   helperTemplate: string;
   callTemplate: string;
   placeholders: Record<string, string>;
+  placement: {
+    helper: "file-start" | "top-level";
+    call: "statement";
+  };
 }
 
 export const TEMPLATE_EVENT_SCHEMA = {

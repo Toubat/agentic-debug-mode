@@ -576,6 +576,8 @@ export function renderCTemplate(): ProbeTemplates {
     ].join("\n"),
     ingest: "file",
     language: "c",
+    dataEncoding: "native-json-value",
+    placement: { call: "statement", helper: "file-start" },
     placeholders: {
       __APPEND_PATH__: "Replace with the appendPath returned by debug-mode create.",
       __DATA_EXPRESSION__: "Replace with a JSON-compatible C AgentValue that has no secrets.",

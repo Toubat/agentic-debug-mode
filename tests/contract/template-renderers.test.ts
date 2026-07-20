@@ -41,6 +41,11 @@ describe("session-independent template renderers", () => {
       const otherTarget = ingest === "http" ? "__APPEND_PATH__" : "__INGEST_URL__";
 
       expect(template).toMatchObject({ ingest, language });
+      expect(template.dataEncoding).toBe("native-json-value");
+      expect(template.placement.call).toBe("statement");
+      expect(template.placement.helper).toBe(
+        language === "c" || language === "cpp" ? "file-start" : "top-level",
+      );
       expect(template.helperTemplate).toContain(target);
       expect(template.helperTemplate).not.toContain(otherTarget);
       expect(template.callTemplate).not.toContain(target);

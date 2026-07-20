@@ -83,6 +83,8 @@ export function renderJavaScriptTemplate(): ProbeTemplates {
     helperTemplate,
     ingest: "http",
     language: "javascript",
+    dataEncoding: "native-json-value",
+    placement: { call: "statement", helper: "top-level" },
     placeholders: {
       __DATA_EXPRESSION__:
         "Replace with a JSON-compatible JavaScript expression that has no secrets.",
