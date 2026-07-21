@@ -115,6 +115,66 @@ debug-mode status --session <id>
 After the fix, `reset`, reproduce, and re-run the grouping query. When the skipped cluster is gone
 and expected tasks appear, remove the regions and `debug-mode stop`.
 
+## Example 3 — Rust worker computes a wrong queue depth (serialized JSON, file)
+
+**Symptom.** A background worker occasionally pops from an empty queue. Hypothesis: `H1` the depth
+snapshot is stale by the time the pop runs.
+
+```bash
+debug-mode create
+debug-mode template --language rust --ingest file
+```
+
+Rust, C++, and C are `serialized-json` templates: the call placeholder is `__DATA_JSON_EXPRESSION__`,
+and you pass an expression that already evaluates to one complete JSON value. Insert the helper once
+at module scope (its declared placement is `top-level`), then a call region per hypothesis. Prefer
+the application's serializer — here `serde_json` — and keep the emit inside the region:
+
+```rust
+// #region agent log
+if let Ok(__agent_debug_data) = serde_json::to_string(&serde_json::json!({
+    "queueDepth": queue.len(),
+    "ready": ready,
+})) {
+    agent_debug_mode::emit(
+        "H1",
+        &format!("{}:{}", file!(), line!()),
+        "Depth snapshot before pop",
+        &__agent_debug_data,
+    );
+}
+// #endregion
+```
+
+When no serializer is available, fall back to the helper's `json_string` on a concise text summary
+rather than hand-building JSON (this is also how C uses `agent_debug_json_string`, and C++
+`agent_debug_mode::json_string`):
+
+```rust
+// #region agent log
+agent_debug_mode::emit(
+    "H1",
+    &format!("{}:{}", file!(), line!()),
+    "Depth snapshot before pop",
+    &agent_debug_mode::json_string(&format!("queueDepth={} ready={}", queue.len(), ready)),
+);
+// #endregion
+```
+
+The `data` field is then a JSON string: you can still filter by hypothesis, location, message, and
+timestamp, but not by fields inside the text. Because these helpers do no client-side redaction,
+choose the smallest diagnostic value and never place secrets in `data`.
+
+```bash
+debug-mode reset --session <id>
+cargo run --bin worker
+debug-mode query --session <id> 'select(.hypothesisId == "H1" and .data.queueDepth == 0)'
+```
+
+Rows where `queueDepth == 0` immediately before a pop confirm the stale snapshot. `H1` **CONFIRMED**.
+Fix, record the baseline, `reset`, reproduce, and confirm the rows are gone before removing the
+regions and `debug-mode stop`.
+
 ## Recovering a lost session
 
 If you no longer have the Session ID:

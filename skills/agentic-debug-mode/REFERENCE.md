@@ -40,6 +40,25 @@ schema** for one language and transport. Templates never take `--session`.
 HTTP templates use an ingest-URL placeholder; file templates use an append-path placeholder. Other
 languages are unsupported until a safe serializer contract is defined.
 
+The template output includes machine-readable **data encoding** and **placement** metadata:
+
+- **Data encoding.** `native-json-value` templates take a native value in `__DATA_EXPRESSION__` and
+  serialize plus redact it client-side (JavaScript, TypeScript, Python, Go, Ruby, PHP, PowerShell,
+  C#, Swift, Java, Kotlin). `serialized-json` templates (Rust, C++, C) take `__DATA_JSON_EXPRESSION__`,
+  an expression already evaluating to one complete serialized JSON value inserted verbatim after
+  `"data":`. These languages have no standard structured JSON value, so the recursive serializer and
+  redactor were removed from the instrumented file; use the application's serializer, or the helper's
+  `json_string(text)` fallback (`agent_debug_mode::json_string` for C++/Rust, `agent_debug_json_string`
+  for C) to encode plain text. Never concatenate unescaped strings into raw JSON.
+- **Placement.** `helper: "file-start"` for C and C++ (includes and `#define`s precede
+  declarations); `helper: "top-level"` for Rust and every other language; `call: "statement"` for
+  all. Each call and the helper belong in their own `agent log` region.
+
+Regardless of encoding, the call site is responsible for excluding secrets and choosing the smallest
+diagnostic value. Serialized-JSON helpers perform no client-side redaction; the background service
+still validates and redacts accepted JSON before canonical persistence (defense-in-depth). HTTP
+helpers post newline-delimited JSON with content type `application/x-ndjson`.
+
 ### `debug-mode reset --session <id>`
 
 Clears events, diagnostics, and sequence state for the session while preserving the session ID,

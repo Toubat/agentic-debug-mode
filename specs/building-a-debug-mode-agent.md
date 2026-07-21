@@ -154,6 +154,21 @@ advertised, end-to-end-tested combinations are:
 
 Other languages are not advertised until a safe serializer contract is defined.
 
+The template also reports **data encoding** and **placement** metadata:
+
+- **Data encoding.** `native-json-value` templates take a native value in `__DATA_EXPRESSION__` and
+  serialize plus redact it client-side (JavaScript, TypeScript, Python, Go, Ruby, PHP, PowerShell,
+  C#, Swift, Java, Kotlin). `serialized-json` templates (Rust, C++, C) take `__DATA_JSON_EXPRESSION__`,
+  an expression already evaluating to one complete serialized JSON value inserted verbatim after
+  `"data":`; these languages have no standard structured JSON value, so the recursive serializer and
+  redactor no longer live in the instrumented file. Use the application's serializer or the helper's
+  `json_string(text)` fallback (`agent_debug_mode::json_string` for C++/Rust, `agent_debug_json_string`
+  for C), and never hand-concatenate raw JSON.
+- **Placement.** `helper: "file-start"` for C and C++ (includes and `#define`s precede
+  declarations), `helper: "top-level"` for Rust and the rest, and `call: "statement"` for every
+  language. Consumers should read placeholder names from the template's placeholder map rather than
+  assuming a fixed name, because the serialized-JSON rename is deliberately breaking.
+
 #### `debug-mode reset --session <id>`
 
 Clears events, diagnostics, and sequence state while preserving the session ID, append path, and
@@ -239,10 +254,14 @@ tie-breaker. The schema version is stored once in session metadata.
 
 ### Data rules
 
-- Use a native JSON serializer; never build JSON by string interpolation.
-- Keep `message` constant; put changing values in `data`.
-- Never record passwords, tokens, cookies, authorization headers, private keys, full request
-  bodies, or unrelated personal data. Secrets are redacted before canonical persistence.
+- Use a native serializer, or the serialized-JSON helper's `json_string(text)` fallback for plain
+  text; never build JSON by string interpolation.
+- Keep `message` constant; put changing values in `data`, and choose the smallest diagnostic value
+  that tests the hypothesis.
+- Excluding secrets is the call site's responsibility: never record passwords, tokens, cookies,
+  authorization headers, private keys, full request bodies, or unrelated personal data. Redaction
+  before canonical persistence is defense-in-depth, not permission to send secrets, and the Rust,
+  C++, and C helpers do no client-side redaction at all.
 - Bound strings, arrays, and object depth. A failed observation must never change control flow.
 
 ## 4. Ingestion
@@ -251,9 +270,10 @@ tie-breaker. The schema version is stored once in session metadata.
 
 ```text
 POST /ingest/<sessionId>
-Content-Type: application/json
+Content-Type: application/x-ndjson
 ```
 
+The HTTP helpers post newline-delimited JSON, so the actual content type is `application/x-ndjson`.
 The loopback route determines the session. There is no separate token, header, or session field in
 the body.
 

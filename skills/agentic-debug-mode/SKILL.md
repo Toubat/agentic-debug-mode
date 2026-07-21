@@ -37,9 +37,14 @@ Terms used throughout, defined once:
   track these; the CLI never registers, declares, or validates them. It only groups and filters the
   labels it sees in evidence.
 - **Helper template** — a block of code, inserted **once** per runtime, that owns transport,
-  serialization, size limits, secret redaction, and failure suppression. Treat it as opaque.
-- **Call template** — a small block copied **once per observation**. You replace only its
-  placeholders.
+  envelope construction, size limits, and failure suppression. Treat it as opaque. Its declared
+  **placement** says where it must go: at file start for C and C++ (their includes must precede
+  declarations), at module or file scope for every other language.
+- **Call template** — a small block copied **once per observation**, always in statement position.
+  You replace only its placeholders. Most languages take a native value in `__DATA_EXPRESSION__`
+  and serialize it for you; Rust, C++, and C instead take `__DATA_JSON_EXPRESSION__`, an expression
+  that already evaluates to one complete serialized JSON value (use the application's serializer, or
+  the helper's `json_string(text)` fallback for plain text — never hand-concatenate raw JSON).
 - **Observation** — one `agent log` region emitting one event that tests one hypothesis.
 - **Ingest URL** — the loopback address an HTTP helper posts to. The session is in the URL path;
   it is not a secret and needs no header.
@@ -140,9 +145,10 @@ __agentDebugEmit({
 // #endregion
 ```
 
-Python and other file runtimes use `# region agent log` / `# endregion`. Never put production
-behavior inside a region, never `await` an observation, and never instrument a generated file whose
-syntax cannot hold the markers.
+Python and Ruby use `# region agent log` / `# endregion`; Rust, C, C++, Go, Java, Kotlin, C#, and
+Swift use the `// #region agent log` / `// #endregion` line-comment form. Keep whichever markers the
+template prints. Never put production behavior inside a region, never `await` an observation, and
+never instrument a generated file whose syntax cannot hold the markers.
 
 ### Event schema
 
@@ -157,11 +163,14 @@ Every observation carries exactly five fields:
 Stored evidence adds `id`, `sequence` (order within the reset cycle), and `receivedAt` (receipt
 time, also Unix epoch milliseconds). When timestamps tie, `sequence` breaks the tie.
 
-Keep `message` constant and put changing values in `data`. Keep `data` small and bounded. Never
-record passwords, cookies, authorization headers, private keys, full request bodies, or unrelated
-personal data — the helper redacts obvious secrets, but you choose what to observe. A failed
-observation must never change application control flow; the helper isolates transport failures, so
-missing events mean an unexecuted path or a failed run, never a crash.
+Keep `message` constant and put changing values in `data`. Keep `data` small and bounded — choose
+the smallest diagnostic value that tests the hypothesis. Excluding secrets is your responsibility:
+never record passwords, cookies, authorization headers, private keys, full request bodies, or
+unrelated personal data. Redaction before stored evidence is a safety net, not permission to send
+secrets — and the Rust, C++, and C helpers do no client-side redaction at all, so whatever the call
+site passes is what leaves the process. A failed observation must never change application control
+flow; the helper isolates transport failures, so missing events mean an unexecuted path or a failed
+run, never a crash.
 
 ### 3. Reset and reproduce
 
