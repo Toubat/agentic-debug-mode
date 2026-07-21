@@ -66,6 +66,14 @@ policy allows, then verify again:
 Never use an unverified `curl | sh`, never request elevated privileges, and never edit shell
 startup files. If no supported channel works, stop and report the exact error.
 
+If a command reports `The optional package agentic-debug-mode-<platform> is missing`, the launcher
+installed but its platform binary did not. This is almost always npm skipping the platform
+`optionalDependencies` on an upgrade, or a just-published version whose platform tarballs have not
+finished propagating to the registry CDN yet. Recover by reinstalling: `npm uninstall --global
+agentic-debug-mode` then `npm install --global agentic-debug-mode@latest`. If it still reports the
+missing package immediately after a release, wait a minute for CDN propagation and reinstall; do
+not switch install channels or disable optional dependencies.
+
 ## Workflow
 
 For one investigation, repeat this loop with **one** session:
