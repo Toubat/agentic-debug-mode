@@ -97,7 +97,12 @@ async function waitForRecordedProcessExit(
   connection: Pick<DaemonConnection, "pid" | "processIdentity">,
   deadline: number,
 ): Promise<void> {
-  if (process.platform !== "win32") {
+  // A real daemon is always a separate spawned process; only then can waiting for
+  // it to exit release locks the caller is about to act on. An in-process server
+  // (integration tests that call startDaemonServer directly) records the current
+  // pid, which will never exit here — closing its listener is all the caller can
+  // observe, so return once health is already down rather than spin to the deadline.
+  if (process.platform !== "win32" || connection.pid === process.pid) {
     return;
   }
   while (Date.now() < deadline) {
