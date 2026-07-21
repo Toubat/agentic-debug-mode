@@ -85,6 +85,8 @@ export function renderPythonTemplate(): ProbeTemplates {
     helperTemplate,
     ingest: "file",
     language: "python",
+    dataEncoding: "native-json-value",
+    placement: { call: "statement", helper: "top-level" },
     placeholders: {
       __APPEND_PATH__: "Replace with the appendPath returned by debug-mode create.",
       __DATA_EXPRESSION__: "Replace with a JSON-compatible Python expression that has no secrets.",

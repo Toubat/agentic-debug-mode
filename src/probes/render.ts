@@ -1,10 +1,15 @@
+import { renderCTemplate } from "./c";
+import { renderCppTemplate } from "./cpp";
 import { renderCSharpTemplate } from "./csharp";
 import { renderGoTemplate } from "./go";
+import { renderJavaTemplate } from "./java";
 import { renderJavaScriptTemplate } from "./javascript";
+import { renderKotlinTemplate } from "./kotlin";
 import { renderPhpTemplate } from "./php";
 import { renderPowerShellTemplate } from "./powershell";
 import { renderPythonTemplate } from "./python";
 import { renderRubyTemplate } from "./ruby";
+import { renderRustTemplate } from "./rust";
 import { renderSwiftTemplate } from "./swift";
 import { renderTypeScriptTemplate } from "./typescript";
 
@@ -17,16 +22,28 @@ export type TemplateLanguage =
   | "php"
   | "powershell"
   | "csharp"
-  | "swift";
+  | "swift"
+  | "rust"
+  | "cpp"
+  | "c"
+  | "java"
+  | "kotlin";
 
 export type IngestMethod = "http" | "file";
+
+export type ProbeDataEncoding = "native-json-value" | "serialized-json";
 
 export interface ProbeTemplates {
   language: TemplateLanguage;
   ingest: IngestMethod;
+  dataEncoding: ProbeDataEncoding;
   helperTemplate: string;
   callTemplate: string;
   placeholders: Record<string, string>;
+  placement: {
+    helper: "file-start" | "top-level";
+    call: "statement";
+  };
 }
 
 export const TEMPLATE_EVENT_SCHEMA = {
@@ -77,6 +94,20 @@ function normalizeLanguage(language: string): TemplateLanguage | undefined {
       return "csharp";
     case "swift":
       return "swift";
+    case "rust":
+    case "rs":
+      return "rust";
+    case "cpp":
+    case "c++":
+    case "cxx":
+      return "cpp";
+    case "c":
+      return "c";
+    case "java":
+      return "java";
+    case "kotlin":
+    case "kt":
+      return "kotlin";
     default:
       return undefined;
   }
@@ -109,6 +140,16 @@ export function renderTemplate(language: string, ingest: string): ProbeTemplates
       return renderCSharpTemplate();
     case "swift:file":
       return renderSwiftTemplate();
+    case "rust:file":
+      return renderRustTemplate();
+    case "cpp:file":
+      return renderCppTemplate();
+    case "c:file":
+      return renderCTemplate();
+    case "java:file":
+      return renderJavaTemplate();
+    case "kotlin:file":
+      return renderKotlinTemplate();
     default:
       throw new UnsupportedTemplateError(language, ingest);
   }

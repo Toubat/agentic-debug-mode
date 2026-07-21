@@ -61,25 +61,35 @@ interface TemplateOutput extends ProbeTemplates {
 
 interface Fixture {
   callData: string;
-  command: (fixturePath: string) => string[];
-  cycleData: string;
-  cyclePrelude: string;
+  // A sequence of argv steps run in order without a shell; each step must exit 0
+  // before the next runs. Compiled languages use two steps (compile, then run);
+  // interpreted languages use one. Avoiding a shell sidesteps cmd.exe quote
+  // mangling of compound "&&" command strings on Windows.
+  command: (fixturePath: string) => string[][];
+  // How the call site supplies `data`. native-json-value templates redact and
+  // serialize client-side; serialized-json templates pass raw caller JSON that
+  // the daemon redacts. The cycle/shared-reference cases only apply to the
+  // client-side value model, so they are omitted for serialized-json fixtures.
+  dataEncoding: "native-json-value" | "serialized-json";
+  cycleData?: string;
+  cyclePrelude?: string;
   file: string;
   ingest: "file" | "http";
   language: string;
   runtime: string | null;
   setup?: (workspace: string) => Promise<void>;
-  sharedData: string;
-  sharedPrelude: string;
+  sharedData?: string;
+  sharedPrelude?: string;
 }
 
 const fixtures: Fixture[] = [
   {
     callData:
       '{ value: 42, designToken: "visible-design-token", fortuneCookie: "visible-fortune-cookie", secretSauceName: "visible-secret-sauce", tokenCount: 7, passwordPolicy: "visible-password-policy", password: "source-password-secret", APIKey: "source-api-acronym-secret", APIToken: "source-api-token-secret", IDToken: "source-id-token-secret", OAuthToken: "source-oauth-token-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
-    command: (path) => [Bun.which("node") ?? "", path],
+    command: (path) => [[Bun.which("node") ?? "", path]],
     cycleData: "__agentCycle",
     cyclePrelude: "const __agentCycle = {}; __agentCycle.self = __agentCycle;",
+    dataEncoding: "native-json-value",
     file: "javascript-http.mjs",
     ingest: "http",
     language: "javascript",
@@ -90,10 +100,11 @@ const fixtures: Fixture[] = [
   {
     callData:
       '{ value: 42, designToken: "visible-design-token", fortuneCookie: "visible-fortune-cookie", secretSauceName: "visible-secret-sauce", tokenCount: 7, passwordPolicy: "visible-password-policy", password: "source-password-secret", APIKey: "source-api-acronym-secret", APIToken: "source-api-token-secret", IDToken: "source-id-token-secret", OAuthToken: "source-oauth-token-secret", "Client Secret": "source-client-secret", nested: { apiKey: "source-api-secret", items: [{ "refresh-token": "source-refresh-secret" }, { credentials: "source-credentials-secret" }] } }',
-    command: (path) => [process.execPath, path],
+    command: (path) => [[process.execPath, path]],
     cycleData: "__agentCycle",
     cyclePrelude:
       "const __agentCycle: Record<string, unknown> = {}; __agentCycle.self = __agentCycle;",
+    dataEncoding: "native-json-value",
     file: "typescript-http.ts",
     ingest: "http",
     language: "typescript",
@@ -105,9 +116,10 @@ const fixtures: Fixture[] = [
   {
     callData:
       '{"value": 42, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": {"apiKey": "source-api-secret", "items": ({"refresh-token": "source-refresh-secret"}, {"credentials": "source-credentials-secret"})}}',
-    command: (path) => [Bun.which("python3") ?? "", path],
+    command: (path) => [[Bun.which("python3") ?? "", path]],
     cycleData: "__agent_cycle",
     cyclePrelude: '__agent_cycle = {}; __agent_cycle["self"] = __agent_cycle',
+    dataEncoding: "native-json-value",
     file: "python-file.py",
     ingest: "file",
     language: "python",
@@ -118,9 +130,10 @@ const fixtures: Fixture[] = [
   {
     callData:
       'map[string]any{"value": 42, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": map[string]any{"apiKey": "source-api-secret", "items": []any{map[string]string{"refresh-token": "source-refresh-secret"}, map[string]string{"credentials": "source-credentials-secret"}}}}',
-    command: (path) => [Bun.which("go") ?? "", "run", path],
+    command: (path) => [[Bun.which("go") ?? "", "run", path]],
     cycleData: "__agentCycle",
     cyclePrelude: '__agentCycle := map[string]any{}; __agentCycle["self"] = __agentCycle',
+    dataEncoding: "native-json-value",
     file: "go-file.go",
     ingest: "file",
     language: "go",
@@ -131,9 +144,10 @@ const fixtures: Fixture[] = [
   {
     callData:
       '{ "value" => 42, "designToken" => "visible-design-token", "fortuneCookie" => "visible-fortune-cookie", "secretSauceName" => "visible-secret-sauce", "tokenCount" => 7, "passwordPolicy" => "visible-password-policy", "password" => "source-password-secret", "APIKey" => "source-api-acronym-secret", "APIToken" => "source-api-token-secret", "IDToken" => "source-id-token-secret", "OAuthToken" => "source-oauth-token-secret", "Client Secret" => "source-client-secret", "nested" => { "apiKey" => "source-api-secret", "items" => [{ "refresh-token" => "source-refresh-secret" }, { "credentials" => "source-credentials-secret" }] } }',
-    command: (path) => [Bun.which("ruby") ?? "", path],
+    command: (path) => [[Bun.which("ruby") ?? "", path]],
     cycleData: "__agent_cycle",
     cyclePrelude: '__agent_cycle = {}; __agent_cycle["self"] = __agent_cycle',
+    dataEncoding: "native-json-value",
     file: "ruby-file.rb",
     ingest: "file",
     language: "ruby",
@@ -144,9 +158,10 @@ const fixtures: Fixture[] = [
   {
     callData:
       '["value" => 42, "designToken" => "visible-design-token", "fortuneCookie" => "visible-fortune-cookie", "secretSauceName" => "visible-secret-sauce", "tokenCount" => 7, "passwordPolicy" => "visible-password-policy", "password" => "source-password-secret", "APIKey" => "source-api-acronym-secret", "APIToken" => "source-api-token-secret", "IDToken" => "source-id-token-secret", "OAuthToken" => "source-oauth-token-secret", "Client Secret" => "source-client-secret", "nested" => ["apiKey" => "source-api-secret", "items" => [["refresh-token" => "source-refresh-secret"], ["credentials" => "source-credentials-secret"]]]]',
-    command: (path) => [Bun.which("php") ?? "", path],
+    command: (path) => [[Bun.which("php") ?? "", path]],
     cycleData: "$__agentCycle",
     cyclePrelude: '$__agentCycle = []; $__agentCycle["self"] = &$__agentCycle;',
+    dataEncoding: "native-json-value",
     file: "php-file.php",
     ingest: "file",
     language: "php",
@@ -157,9 +172,10 @@ const fixtures: Fixture[] = [
   {
     callData:
       '@{ value = 42; designToken = "visible-design-token"; fortuneCookie = "visible-fortune-cookie"; secretSauceName = "visible-secret-sauce"; tokenCount = 7; passwordPolicy = "visible-password-policy"; password = "source-password-secret"; APIKey = "source-api-acronym-secret"; APIToken = "source-api-token-secret"; IDToken = "source-id-token-secret"; OAuthToken = "source-oauth-token-secret"; "Client Secret" = "source-client-secret"; nested = @{ apiKey = "source-api-secret"; items = @(@{ "refresh-token" = "source-refresh-secret" }, @{ credentials = "source-credentials-secret" }) } }',
-    command: (path) => [Bun.which("pwsh") ?? "", "-File", path],
+    command: (path) => [[Bun.which("pwsh") ?? "", "-File", path]],
     cycleData: "$__agentCycle",
     cyclePrelude: "$__agentCycle = @{}; $__agentCycle.self = $__agentCycle",
+    dataEncoding: "native-json-value",
     file: "powershell-file.ps1",
     ingest: "file",
     language: "powershell",
@@ -170,10 +186,11 @@ const fixtures: Fixture[] = [
   {
     callData:
       'new Dictionary<string, object?> { ["value"] = 42, ["designToken"] = "visible-design-token", ["fortuneCookie"] = "visible-fortune-cookie", ["secretSauceName"] = "visible-secret-sauce", ["tokenCount"] = 7, ["passwordPolicy"] = "visible-password-policy", ["password"] = "source-password-secret", ["APIKey"] = "source-api-acronym-secret", ["APIToken"] = "source-api-token-secret", ["IDToken"] = "source-id-token-secret", ["OAuthToken"] = "source-oauth-token-secret", ["Client Secret"] = "source-client-secret", ["nested"] = new Dictionary<string, object?> { ["apiKey"] = "source-api-secret", ["items"] = new object?[] { new Dictionary<string, object?> { ["refresh-token"] = "source-refresh-secret" }, new Dictionary<string, object?> { ["credentials"] = "source-credentials-secret" } } } }',
-    command: (path) => [Bun.which("dotnet") ?? "", "run", "--project", join(path, "..")],
+    command: (path) => [[Bun.which("dotnet") ?? "", "run", "--project", join(path, "..")]],
     cycleData: "__agentCycle",
     cyclePrelude:
       'var __agentCycle = new Dictionary<string, object?>(); __agentCycle["self"] = __agentCycle;',
+    dataEncoding: "native-json-value",
     file: "Program.cs",
     ingest: "file",
     language: "csharp",
@@ -196,15 +213,115 @@ const fixtures: Fixture[] = [
   {
     callData:
       '["value": 42, "designToken": "visible-design-token", "fortuneCookie": "visible-fortune-cookie", "secretSauceName": "visible-secret-sauce", "tokenCount": 7, "passwordPolicy": "visible-password-policy", "password": "source-password-secret", "APIKey": "source-api-acronym-secret", "APIToken": "source-api-token-secret", "IDToken": "source-id-token-secret", "OAuthToken": "source-oauth-token-secret", "Client Secret": "source-client-secret", "nested": ["apiKey": "source-api-secret", "items": [["refresh-token": "source-refresh-secret"], ["credentials": "source-credentials-secret"]]]]',
-    command: (path) => [Bun.which("swift") ?? "", path],
+    command: (path) => [[Bun.which("swift") ?? "", path]],
     cycleData: "__agentCycle",
     cyclePrelude: 'let __agentCycle = NSMutableDictionary(); __agentCycle["self"] = __agentCycle',
+    dataEncoding: "native-json-value",
     file: "swift-file.swift",
     ingest: "file",
     language: "swift",
     runtime: process.platform === "darwin" ? Bun.which("swift") : null,
     sharedData: '["left": __agentShared, "right": __agentShared]',
     sharedPrelude: 'let __agentShared: [String: Any] = ["APIKey": "source-shared-secret"]',
+  },
+  {
+    // Serialized-json call sites hand the emitter one complete raw JSON value.
+    // The fixture emits the policy matrix verbatim (secrets included) as a raw
+    // string literal; the daemon performs redaction, so canonical evidence still
+    // equals canonicalPolicyData.
+    callData:
+      'r#"{"value":42,"designToken":"visible-design-token","fortuneCookie":"visible-fortune-cookie","secretSauceName":"visible-secret-sauce","tokenCount":7,"passwordPolicy":"visible-password-policy","password":"source-password-secret","APIKey":"source-api-acronym-secret","APIToken":"source-api-token-secret","IDToken":"source-id-token-secret","OAuthToken":"source-oauth-token-secret","Client Secret":"source-client-secret","nested":{"apiKey":"source-api-secret","items":[{"refresh-token":"source-refresh-secret"},{"credentials":"source-credentials-secret"}]}}"#',
+    command: (path) => {
+      const rustc = Bun.which("rustc") ?? "";
+      const binary = path.replace(/\.rs$/, process.platform === "win32" ? ".exe" : ".out");
+      return [[rustc, "-A", "warnings", path, "-o", binary], [binary]];
+    },
+    dataEncoding: "serialized-json",
+    file: "rust-file.rs",
+    ingest: "file",
+    language: "rust",
+    runtime: Bun.which("rustc"),
+  },
+  {
+    // Serialized-json call sites hand the emitter one complete raw JSON value.
+    // The fixture emits the policy matrix verbatim (secrets included) as a raw
+    // string literal; the daemon performs redaction, so canonical evidence still
+    // equals canonicalPolicyData.
+    callData:
+      'R"({"value":42,"designToken":"visible-design-token","fortuneCookie":"visible-fortune-cookie","secretSauceName":"visible-secret-sauce","tokenCount":7,"passwordPolicy":"visible-password-policy","password":"source-password-secret","APIKey":"source-api-acronym-secret","APIToken":"source-api-token-secret","IDToken":"source-id-token-secret","OAuthToken":"source-oauth-token-secret","Client Secret":"source-client-secret","nested":{"apiKey":"source-api-secret","items":[{"refresh-token":"source-refresh-secret"},{"credentials":"source-credentials-secret"}]}})"',
+    command: (path) => {
+      const compiler = Bun.which("clang++") ?? Bun.which("g++") ?? "";
+      const binary = path.replace(/\.cpp$/, process.platform === "win32" ? ".exe" : ".out");
+      return [[compiler, "-std=c++17", path, "-o", binary], [binary]];
+    },
+    dataEncoding: "serialized-json",
+    file: "cpp-file.cpp",
+    ingest: "file",
+    language: "cpp",
+    runtime: Bun.which("clang++") ?? Bun.which("g++"),
+  },
+  {
+    // Serialized-json call sites hand the emitter one complete raw JSON value. C
+    // has no raw-string literals, so the policy matrix (secrets included) is an
+    // escaped C string literal — the double JSON.stringify of policyInput yields
+    // exactly `"{\"value\":42,...}"`. The daemon performs redaction, so canonical
+    // evidence still equals canonicalPolicyData.
+    callData: JSON.stringify(JSON.stringify(policyInput)),
+    command: (path) => {
+      const compiler = Bun.which("clang") ?? Bun.which("gcc") ?? "";
+      const binary = path.replace(/\.c$/, process.platform === "win32" ? ".exe" : ".out");
+      return [[compiler, "-std=c99", path, "-o", binary], [binary]];
+    },
+    dataEncoding: "serialized-json",
+    file: "c-file.c",
+    ingest: "file",
+    language: "c",
+    runtime: Bun.which("clang") ?? Bun.which("gcc"),
+  },
+  {
+    callData:
+      'java.util.Map.ofEntries(java.util.Map.entry("value", 42), java.util.Map.entry("designToken", "visible-design-token"), java.util.Map.entry("fortuneCookie", "visible-fortune-cookie"), java.util.Map.entry("secretSauceName", "visible-secret-sauce"), java.util.Map.entry("tokenCount", 7), java.util.Map.entry("passwordPolicy", "visible-password-policy"), java.util.Map.entry("password", "source-password-secret"), java.util.Map.entry("APIKey", "source-api-acronym-secret"), java.util.Map.entry("APIToken", "source-api-token-secret"), java.util.Map.entry("IDToken", "source-id-token-secret"), java.util.Map.entry("OAuthToken", "source-oauth-token-secret"), java.util.Map.entry("Client Secret", "source-client-secret"), java.util.Map.entry("nested", java.util.Map.ofEntries(java.util.Map.entry("apiKey", "source-api-secret"), java.util.Map.entry("items", java.util.List.of(java.util.Map.of("refresh-token", "source-refresh-secret"), java.util.Map.of("credentials", "source-credentials-secret"))))))',
+    command: (path) => [[Bun.which("java") ?? "", path]],
+    cycleData: "__agentCycle",
+    cyclePrelude:
+      'java.util.Map<String, Object> __agentCycle = new java.util.LinkedHashMap<>(); __agentCycle.put("self", __agentCycle);',
+    dataEncoding: "native-json-value",
+    file: "java-file.java",
+    ingest: "file",
+    language: "java",
+    runtime: Bun.which("java"),
+    sharedData: 'java.util.Map.of("left", __agentShared, "right", __agentShared)',
+    sharedPrelude:
+      'java.util.Map<String, Object> __agentShared = new java.util.LinkedHashMap<>(); __agentShared.put("APIKey", "source-shared-secret");',
+  },
+  {
+    callData:
+      'mapOf("value" to 42, "designToken" to "visible-design-token", "fortuneCookie" to "visible-fortune-cookie", "secretSauceName" to "visible-secret-sauce", "tokenCount" to 7, "passwordPolicy" to "visible-password-policy", "password" to "source-password-secret", "APIKey" to "source-api-acronym-secret", "APIToken" to "source-api-token-secret", "IDToken" to "source-id-token-secret", "OAuthToken" to "source-oauth-token-secret", "Client Secret" to "source-client-secret", "nested" to mapOf("apiKey" to "source-api-secret", "items" to listOf(mapOf("refresh-token" to "source-refresh-secret"), mapOf("credentials" to "source-credentials-secret"))))',
+    command: (path) => {
+      const kotlinc = Bun.which("kotlinc") ?? "";
+      const java = Bun.which("java") ?? "";
+      const jar = path.replace(/\.kt$/, ".jar");
+      // On Windows kotlinc resolves to kotlinc.bat, which cmd.exe must interpret;
+      // passing the batch path and its arguments as separate argv elements lets
+      // Bun quote each one correctly instead of mangling a compound string.
+      const compile =
+        process.platform === "win32"
+          ? ["cmd", "/c", kotlinc, "-include-runtime", "-d", jar, path]
+          : [kotlinc, "-include-runtime", "-d", jar, path];
+      return [compile, [java, "-jar", jar]];
+    },
+    cycleData: "__agentCycle",
+    cyclePrelude:
+      'val __agentCycle = java.util.LinkedHashMap<String, Any>(); __agentCycle.put("self", __agentCycle)',
+    dataEncoding: "native-json-value",
+    file: "kotlin-file.kt",
+    ingest: "file",
+    language: "kotlin",
+    runtime:
+      Bun.which("kotlinc") !== null && Bun.which("java") !== null ? Bun.which("kotlinc") : null,
+    sharedData: 'mapOf("left" to __agentShared, "right" to __agentShared)',
+    sharedPrelude:
+      'val __agentShared = java.util.LinkedHashMap<String, Any>(); __agentShared.put("APIKey", "source-shared-secret")',
   },
 ];
 
@@ -220,6 +337,25 @@ async function run(command: string[], env: Record<string, string | undefined> = 
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
   ]);
+  return { exitCode, stderr, stdout };
+}
+
+// Runs argv steps in order, concatenating their output. Stops at the first step
+// that exits non-zero and returns its exit code, so a failed compile surfaces
+// the compiler's stderr and the run step never executes.
+async function runSteps(steps: string[][], env: Record<string, string | undefined> = process.env) {
+  let exitCode = 0;
+  let stdout = "";
+  let stderr = "";
+  for (const step of steps) {
+    const result = await run(step, env);
+    stdout += result.stdout;
+    stderr += result.stderr;
+    exitCode = result.exitCode;
+    if (exitCode !== 0) {
+      break;
+    }
+  }
   return { exitCode, stderr, stdout };
 }
 
@@ -335,6 +471,7 @@ function materialize(
   const values: Record<string, string> = {
     __APPEND_PATH__: target,
     __DATA_EXPRESSION__: dataExpression,
+    __DATA_JSON_EXPRESSION__: dataExpression,
     __HYPOTHESIS_ID__: "H-live",
     __INGEST_URL__: target,
     __LOCATION__: `${fixture.file}:1`,
@@ -453,19 +590,28 @@ describe("live language templates", () => {
           await writeFile(fixturePath, materialize(source, rendered.data, fixture, target));
 
           const startedAt = Date.now();
-          const executed = await run(fixture.command(fixturePath));
+          const executed = await runSteps(fixture.command(fixturePath));
           const finishedAt = Date.now();
           expect(executed.exitCode, executed.stderr).toBe(0);
           const raw = capture
             ? capture.bodies.join("")
             : await readFile(created.data.appendPath, "utf8");
-          for (const secret of sourceSecrets) {
-            expect(raw).not.toContain(secret);
-          }
-          expect(raw).toContain("[REDACTED]");
           const [rawLine] = raw.trim().split("\n");
           const rawEvent = JSON.parse(rawLine ?? "") as { data: unknown };
-          expect(rawEvent.data).toEqual(canonicalPolicyData);
+          if (fixture.dataEncoding === "native-json-value") {
+            // The client redacts before transport, so no secret ever reaches the
+            // incoming record and its data already equals canonical evidence.
+            for (const secret of sourceSecrets) {
+              expect(raw).not.toContain(secret);
+            }
+            expect(raw).toContain("[REDACTED]");
+            expect(rawEvent.data).toEqual(canonicalPolicyData);
+          } else {
+            // Serialized-json callers write raw JSON; the daemon redacts. The
+            // pre-normalization incoming record therefore carries the caller text
+            // verbatim (spec: Secret-handling contract).
+            expect(rawEvent.data).toEqual(policyInput);
+          }
 
           const [event] = await awaitRecords(home, created.data.sessionId, 1);
           expect(event?.data).toEqual(canonicalPolicyData);
@@ -495,7 +641,7 @@ describe("live language templates", () => {
           await runCli(home, ["stop", "--json"]);
         }
       },
-      90_000,
+      180_000,
     );
 
     runtimeTest(
@@ -521,118 +667,121 @@ describe("live language templates", () => {
           materialize(source, rendered.data, fixture, unavailableTarget),
         );
 
-        const executed = await run(fixture.command(fixturePath));
+        const executed = await runSteps(fixture.command(fixturePath));
         expect(executed.exitCode, executed.stderr).toBe(0);
         expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
       },
-      90_000,
+      180_000,
     );
 
-    runtimeTest(
-      `${fixture.language} rejects cyclic values without emitting`,
-      async () => {
-        expect(fixture.runtime, `${fixture.language} runtime must be installed`).not.toBeNull();
-        const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
-        const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${fixture.language}-cycle-`));
-        temporaryDirectories.push(home, workspace);
-        const created = await createSession(home);
-        const rendered = await render(home, fixture);
-        const source = await readFile(
-          join(root, "tests", "fixtures", "languages", fixture.file),
-          "utf8",
-        );
-        await fixture.setup?.(workspace);
-        const fixturePath = join(workspace, fixture.file);
-        const capture =
-          fixture.ingest === "http" ? startCaptureProxy(created.data.ingestUrl) : undefined;
-        const target = capture?.url ?? created.data.appendPath.replaceAll("\\", "\\\\");
-
-        try {
-          await writeFile(
-            fixturePath,
-            materialize(
-              source,
-              rendered.data,
-              fixture,
-              target,
-              1,
-              fixture.cycleData,
-              fixture.cyclePrelude,
-            ),
+    // The cycle and shared-reference cases exercise the client-side value model,
+    // which only native-json-value templates carry. Serialized-json templates
+    // delegate value modeling to the caller, so these cases do not apply.
+    if (fixture.dataEncoding === "native-json-value") {
+      const { cycleData, cyclePrelude, sharedData, sharedPrelude } = fixture;
+      if (
+        cycleData === undefined ||
+        cyclePrelude === undefined ||
+        sharedData === undefined ||
+        sharedPrelude === undefined
+      ) {
+        throw new Error(`${fixture.language} is missing value-model fixture data`);
+      }
+      runtimeTest(
+        `${fixture.language} rejects cyclic values without emitting`,
+        async () => {
+          expect(fixture.runtime, `${fixture.language} runtime must be installed`).not.toBeNull();
+          const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+          const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${fixture.language}-cycle-`));
+          temporaryDirectories.push(home, workspace);
+          const created = await createSession(home);
+          const rendered = await render(home, fixture);
+          const source = await readFile(
+            join(root, "tests", "fixtures", "languages", fixture.file),
+            "utf8",
           );
-          const executed = await run(fixture.command(fixturePath));
-          expect(executed.exitCode, executed.stderr).toBe(0);
-          expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
-          await Bun.sleep(200);
-          expect(capture?.bodies ?? []).toHaveLength(0);
-          const raw =
-            fixture.ingest === "file"
-              ? await readFile(created.data.appendPath, "utf8").catch(() => "")
-              : "";
-          expect(raw).toBe("");
-          const logs = await runCli(home, ["logs", "--session", created.data.sessionId, "--json"]);
-          expect(logs.exitCode, logs.stderr).toBe(0);
-          expect(JSON.parse(logs.stdout)).toMatchObject({
-            statistics: { totalRecords: 0 },
-          });
-        } finally {
-          capture?.stop();
-          await runCli(home, ["stop", "--json"]);
-        }
-      },
-      90_000,
-    );
+          await fixture.setup?.(workspace);
+          const fixturePath = join(workspace, fixture.file);
+          const capture =
+            fixture.ingest === "http" ? startCaptureProxy(created.data.ingestUrl) : undefined;
+          const target = capture?.url ?? created.data.appendPath.replaceAll("\\", "\\\\");
 
-    runtimeTest(
-      `${fixture.language} accepts shared acyclic references`,
-      async () => {
-        expect(fixture.runtime, `${fixture.language} runtime must be installed`).not.toBeNull();
-        const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
-        const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${fixture.language}-shared-`));
-        temporaryDirectories.push(home, workspace);
-        const created = await createSession(home);
-        const rendered = await render(home, fixture);
-        const source = await readFile(
-          join(root, "tests", "fixtures", "languages", fixture.file),
-          "utf8",
-        );
-        await fixture.setup?.(workspace);
-        const fixturePath = join(workspace, fixture.file);
-        const capture =
-          fixture.ingest === "http" ? startCaptureProxy(created.data.ingestUrl) : undefined;
-        const target = capture?.url ?? created.data.appendPath.replaceAll("\\", "\\\\");
+          try {
+            await writeFile(
+              fixturePath,
+              materialize(source, rendered.data, fixture, target, 1, cycleData, cyclePrelude),
+            );
+            const executed = await runSteps(fixture.command(fixturePath));
+            expect(executed.exitCode, executed.stderr).toBe(0);
+            expect(`${executed.stdout}\n${executed.stderr}`).toContain("application-completed");
+            await Bun.sleep(200);
+            expect(capture?.bodies ?? []).toHaveLength(0);
+            const raw =
+              fixture.ingest === "file"
+                ? await readFile(created.data.appendPath, "utf8").catch(() => "")
+                : "";
+            expect(raw).toBe("");
+            const logs = await runCli(home, [
+              "logs",
+              "--session",
+              created.data.sessionId,
+              "--json",
+            ]);
+            expect(logs.exitCode, logs.stderr).toBe(0);
+            expect(JSON.parse(logs.stdout)).toMatchObject({
+              statistics: { totalRecords: 0 },
+            });
+          } finally {
+            capture?.stop();
+            await runCli(home, ["stop", "--json"]);
+          }
+        },
+        180_000,
+      );
 
-        try {
-          await writeFile(
-            fixturePath,
-            materialize(
-              source,
-              rendered.data,
-              fixture,
-              target,
-              1,
-              fixture.sharedData,
-              fixture.sharedPrelude,
-            ),
+      runtimeTest(
+        `${fixture.language} accepts shared acyclic references`,
+        async () => {
+          expect(fixture.runtime, `${fixture.language} runtime must be installed`).not.toBeNull();
+          const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+          const workspace = await mkdtemp(join(tmpdir(), `debug-mode-${fixture.language}-shared-`));
+          temporaryDirectories.push(home, workspace);
+          const created = await createSession(home);
+          const rendered = await render(home, fixture);
+          const source = await readFile(
+            join(root, "tests", "fixtures", "languages", fixture.file),
+            "utf8",
           );
-          const executed = await run(fixture.command(fixturePath));
-          expect(executed.exitCode, executed.stderr).toBe(0);
-          const raw = capture
-            ? capture.bodies.join("")
-            : await readFile(created.data.appendPath, "utf8");
-          expect(raw).not.toContain("source-shared-secret");
-          const [rawLine] = raw.trim().split("\n");
-          const rawEvent = JSON.parse(rawLine ?? "") as { data: unknown };
-          expect(rawEvent.data).toEqual(canonicalSharedPolicyData);
-          const [event] = await awaitRecords(home, created.data.sessionId, 1);
-          expect(event?.data).toEqual(canonicalSharedPolicyData);
-        } finally {
-          capture?.stop();
-          await runCli(home, ["stop", "--json"]);
-        }
-      },
-      90_000,
-    );
+          await fixture.setup?.(workspace);
+          const fixturePath = join(workspace, fixture.file);
+          const capture =
+            fixture.ingest === "http" ? startCaptureProxy(created.data.ingestUrl) : undefined;
+          const target = capture?.url ?? created.data.appendPath.replaceAll("\\", "\\\\");
+
+          try {
+            await writeFile(
+              fixturePath,
+              materialize(source, rendered.data, fixture, target, 1, sharedData, sharedPrelude),
+            );
+            const executed = await runSteps(fixture.command(fixturePath));
+            expect(executed.exitCode, executed.stderr).toBe(0);
+            const raw = capture
+              ? capture.bodies.join("")
+              : await readFile(created.data.appendPath, "utf8");
+            expect(raw).not.toContain("source-shared-secret");
+            const [rawLine] = raw.trim().split("\n");
+            const rawEvent = JSON.parse(rawLine ?? "") as { data: unknown };
+            expect(rawEvent.data).toEqual(canonicalSharedPolicyData);
+            const [event] = await awaitRecords(home, created.data.sessionId, 1);
+            expect(event?.data).toEqual(canonicalSharedPolicyData);
+          } finally {
+            capture?.stop();
+            await runCli(home, ["stop", "--json"]);
+          }
+        },
+        180_000,
+      );
+    }
   }
 
   for (const language of ["javascript", "typescript"]) {
@@ -699,7 +848,7 @@ describe("live language templates", () => {
         const fixturePath = join(workspace, fixture.file);
         await writeFile(fixturePath, materialize(source, rendered.data, fixture, capture.url, 200));
 
-        const executed = await run(fixture.command(fixturePath));
+        const executed = await runSteps(fixture.command(fixturePath));
         expect(executed.exitCode, executed.stderr).toBe(0);
         expect(executed.stdout).toContain("cleanup-count:200");
         expect(capture.bodies).toHaveLength(200);
@@ -726,16 +875,98 @@ describe("live language templates", () => {
     }, 120_000);
   }
 
-  for (const language of ["csharp", "powershell"]) {
+  // Per-language custom-object coverage: C# and PowerShell exercise value types
+  // (structs) so the redactor inspects their members instead of treating them as
+  // atomic; Java has no value types, so it exercises the reflection path over a
+  // plain object's public fields — the only case that reaches the reflection
+  // branch, since the shared policy matrix uses maps and lists throughout.
+  const valueTypeCases: Record<
+    string,
+    { dataExpression: string; prelude: string; extraTypes?: string }
+  > = {
+    csharp: {
+      dataExpression: "__agentValue",
+      prelude: [
+        "var __agentValue = new AgentCustomValue",
+        "{",
+        '    APIKey = "source-value-api-secret",',
+        '    designToken = "visible-value-design-token",',
+        '    Nested = new Dictionary<string, object?> { ["OAuthToken"] = "source-value-oauth-secret" },',
+        "};",
+      ].join("\n"),
+      extraTypes: [
+        "internal struct AgentCustomValue",
+        "{",
+        "    public string APIKey { get; init; }",
+        "    public Dictionary<string, object?> Nested;",
+        "    public string designToken;",
+        "}",
+      ].join("\n"),
+    },
+    java: {
+      dataExpression: "__agentValue",
+      prelude: [
+        "AgentCustomValue __agentValue = new AgentCustomValue();",
+        '__agentValue.APIKey = "source-value-api-secret";',
+        '__agentValue.designToken = "visible-value-design-token";',
+        '__agentValue.Nested = java.util.Map.of("OAuthToken", "source-value-oauth-secret");',
+      ].join("\n"),
+      extraTypes: [
+        "static class AgentCustomValue {",
+        "    public String APIKey;",
+        "    public Object Nested;",
+        "    public String designToken;",
+        "}",
+      ].join("\n"),
+    },
+    kotlin: {
+      dataExpression: "__agentValue",
+      prelude: [
+        "val __agentValue = AgentCustomValue()",
+        '__agentValue.APIKey = "source-value-api-secret"',
+        '__agentValue.designToken = "visible-value-design-token"',
+        '__agentValue.Nested = java.util.Map.of("OAuthToken", "source-value-oauth-secret")',
+      ].join("\n"),
+      extraTypes: [
+        "class AgentCustomValue {",
+        '    @JvmField var APIKey: String = ""',
+        '    @JvmField var Nested: Any = ""',
+        '    @JvmField var designToken: String = ""',
+        "}",
+      ].join("\n"),
+    },
+    powershell: {
+      dataExpression: "$__agentValue",
+      prelude: [
+        "Add-Type -TypeDefinition @'",
+        "public struct AgentCustomValue {",
+        "    public string APIKey { get; set; }",
+        "    public object Nested { get; set; }",
+        "    public string designToken;",
+        "}",
+        "'@",
+        "$__agentValue = [AgentCustomValue]::new()",
+        '$__agentValue.APIKey = "source-value-api-secret"',
+        '$__agentValue.designToken = "visible-value-design-token"',
+        '$__agentValue.Nested = @{ OAuthToken = "source-value-oauth-secret" }',
+      ].join("\n"),
+    },
+  };
+
+  for (const language of ["csharp", "powershell", "java", "kotlin"]) {
     const fixture = fixtures.find((candidate) => candidate.language === language);
     const unavailable = fixture?.runtime === null;
     const runtimeTest = unavailable && !requireRuntimes ? test.skip : test;
+    const valueTypeCase = valueTypeCases[language];
 
     runtimeTest(
       `${language} redacts custom value-type members`,
       async () => {
         if (!fixture) {
           throw new Error(`Missing ${language} fixture`);
+        }
+        if (!valueTypeCase) {
+          throw new Error(`Missing ${language} value-type case`);
         }
         expect(fixture.runtime, `${language} runtime must be installed`).not.toBeNull();
         const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
@@ -749,41 +980,8 @@ describe("live language templates", () => {
         );
         await fixture.setup?.(workspace);
         const fixturePath = join(workspace, fixture.file);
-        const isCSharp = language === "csharp";
-        const prelude = isCSharp
-          ? [
-              "var __agentValue = new AgentCustomValue",
-              "{",
-              '    APIKey = "source-value-api-secret",',
-              '    designToken = "visible-value-design-token",',
-              '    Nested = new Dictionary<string, object?> { ["OAuthToken"] = "source-value-oauth-secret" },',
-              "};",
-            ].join("\n")
-          : [
-              "Add-Type -TypeDefinition @'",
-              "public struct AgentCustomValue {",
-              "    public string APIKey { get; set; }",
-              "    public object Nested { get; set; }",
-              "    public string designToken;",
-              "}",
-              "'@",
-              "$__agentValue = [AgentCustomValue]::new()",
-              '$__agentValue.APIKey = "source-value-api-secret"',
-              '$__agentValue.designToken = "visible-value-design-token"',
-              '$__agentValue.Nested = @{ OAuthToken = "source-value-oauth-secret" }',
-            ].join("\n");
-        if (isCSharp) {
-          source = source.replace(
-            "/* __EXTRA_TYPES__ */",
-            [
-              "internal struct AgentCustomValue",
-              "{",
-              "    public string APIKey { get; init; }",
-              "    public Dictionary<string, object?> Nested;",
-              "    public string designToken;",
-              "}",
-            ].join("\n"),
-          );
+        if (valueTypeCase.extraTypes) {
+          source = source.replace("/* __EXTRA_TYPES__ */", valueTypeCase.extraTypes);
         }
         await writeFile(
           fixturePath,
@@ -793,13 +991,13 @@ describe("live language templates", () => {
             fixture,
             created.data.appendPath.replaceAll("\\", "\\\\"),
             1,
-            isCSharp ? "__agentValue" : "$__agentValue",
-            prelude,
+            valueTypeCase.dataExpression,
+            valueTypeCase.prelude,
           ),
         );
 
         try {
-          const executed = await run(fixture.command(fixturePath));
+          const executed = await runSteps(fixture.command(fixturePath));
           expect(executed.exitCode, executed.stderr).toBe(0);
           const raw = await readFile(created.data.appendPath, "utf8");
           expect(raw).not.toContain("source-value-api-secret");
@@ -817,7 +1015,7 @@ describe("live language templates", () => {
           await runCli(home, ["stop", "--json"]);
         }
       },
-      90_000,
+      180_000,
     );
   }
 
@@ -863,9 +1061,934 @@ describe("live language templates", () => {
           expect(() => JSON.parse(line)).not.toThrow();
         }
       },
-      90_000,
+      180_000,
     );
   }
+});
+
+// Serialized-JSON runtime coverage specific to Rust: the caller supplies raw
+// JSON, so these exercise the emitter's raw-value passthrough, the json_string
+// fallback, size/validity bounds, concurrency, and realistic insertion.
+describe("rust serialized-JSON template", () => {
+  const rust = fixtures.find((candidate) => candidate.language === "rust");
+  if (!rust) {
+    throw new Error("Missing rust fixture");
+  }
+  const rustFixture = rust;
+  const rustRuntimeTest = rustFixture.runtime === null && !requireRuntimes ? test.skip : test;
+
+  // Compiles the rendered helper plus a bespoke main body appending to
+  // appendPath, then runs it. Returns the process result.
+  async function compileAndRun(
+    home: string,
+    workspace: string,
+    fileName: string,
+    body: string,
+    appendPath: string,
+  ) {
+    const rendered = await render(home, rustFixture);
+    const helper = rendered.data.helperTemplate.replaceAll(
+      "__APPEND_PATH__",
+      appendPath.replaceAll("\\", "\\\\"),
+    );
+    const source = `${helper}\n\nfn main() {\n${body}\n    println!("application-completed");\n}\n`;
+    const fixturePath = join(workspace, fileName);
+    await writeFile(fixturePath, source);
+    return runSteps(rustFixture.command(fixturePath));
+  }
+
+  rustRuntimeTest(
+    "accepts serialized arrays, strings, numbers, booleans, and null",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-types-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "types.ndjson");
+      const body = [
+        '    agent_debug_mode::emit("H", "loc:1", "array", r#"[1,2,3]"#);',
+        '    agent_debug_mode::emit("H", "loc:2", "string", &agent_debug_mode::json_string("plain text"));',
+        '    agent_debug_mode::emit("H", "loc:3", "number", r#"42"#);',
+        '    agent_debug_mode::emit("H", "loc:4", "boolean", r#"true"#);',
+        '    agent_debug_mode::emit("H", "loc:5", "null", r#"null"#);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "rust-types.rs", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const lines = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const data = lines.map((line) => (JSON.parse(line) as { data: unknown }).data);
+      expect(data).toEqual([[1, 2, 3], "plain text", 42, true, null]);
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "json_string escapes quotes, backslashes, control characters, and newlines",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-escape-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "escape.ndjson");
+      // Build the tricky text from char codes so the Rust source needs no
+      // escaping: a, quote, backslash, newline, tab, U+0001, z.
+      const body = [
+        "    let mut tricky = String::new();",
+        "    tricky.push('a');",
+        "    tricky.push(char::from(34u8));",
+        "    tricky.push(char::from(92u8));",
+        "    tricky.push(char::from(10u8));",
+        "    tricky.push(char::from(9u8));",
+        "    tricky.push(char::from(1u8));",
+        "    tricky.push('z');",
+        '    agent_debug_mode::emit("H", "loc", "escape", &agent_debug_mode::json_string(&tricky));',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "rust-escape.rs", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const event = JSON.parse(line ?? "") as { data: unknown };
+      expect(event.data).toBe(`a"\\\n\tz`);
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "records malformed raw JSON as rejected without affecting the application",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-malformed-"));
+      temporaryDirectories.push(home, workspace);
+      const created = await createSession(home);
+      try {
+        const body = '    agent_debug_mode::emit("H", "loc:7", "broken", r#"{"broken":"#);';
+        const result = await compileAndRun(
+          home,
+          workspace,
+          "rust-malformed.rs",
+          body,
+          created.data.appendPath,
+        );
+        expect(result.exitCode, result.stderr).toBe(0);
+        expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+        // The daemon needs a moment to observe the incoming line and classify it.
+        let diagnostics: unknown[] = [];
+        for (let attempt = 0; attempt < 80 && diagnostics.length === 0; attempt += 1) {
+          const status = await runCli(home, [
+            "status",
+            "--session",
+            created.data.sessionId,
+            "--json",
+          ]);
+          if (status.exitCode === 0) {
+            const parsed = JSON.parse(status.stdout) as { data: { diagnostics?: unknown[] } };
+            diagnostics = parsed.data.diagnostics ?? [];
+          }
+          if (diagnostics.length === 0) {
+            await Bun.sleep(50);
+          }
+        }
+        expect(diagnostics.length).toBeGreaterThan(0);
+        const logs = await runCli(home, ["logs", "--session", created.data.sessionId, "--json"]);
+        expect(logs.exitCode, logs.stderr).toBe(0);
+        // The malformed record is counted but not accepted: no valid record is
+        // ingested, and the daemon flags exactly one malformed record.
+        expect(JSON.parse(logs.stdout)).toMatchObject({
+          statistics: { malformedRecords: 1, validRecords: 0 },
+        });
+      } finally {
+        await runCli(home, ["stop", "--json"]);
+      }
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "drops an oversize event without affecting the application",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-oversize-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "oversize.ndjson");
+      const body = [
+        '    let big = format!("[{}0]", "0,".repeat(40000));',
+        '    agent_debug_mode::emit("H", "loc", "oversize", &big);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "rust-oversize.rs", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "concurrent emitters append complete, independently parseable records",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const rustc = Bun.which("rustc");
+      expect(rustc, "rustc must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-concurrent-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "concurrent.ndjson");
+      const rendered = await render(home, rustFixture);
+      const helper = rendered.data.helperTemplate.replaceAll(
+        "__APPEND_PATH__",
+        appendPath.replaceAll("\\", "\\\\"),
+      );
+      const source = `${helper}\n\nfn main() {\n    agent_debug_mode::emit("H", "loc", "concurrent", r#"{"n":1}"#);\n}\n`;
+      const fixturePath = join(workspace, "rust-concurrent.rs");
+      const binary = join(
+        workspace,
+        process.platform === "win32" ? "rust-concurrent.exe" : "rust-concurrent.out",
+      );
+      await writeFile(fixturePath, source);
+      const compiled = await run([rustc ?? "", "-A", "warnings", fixturePath, "-o", binary]);
+      expect(compiled.exitCode, compiled.stderr).toBe(0);
+      const executions = await Promise.all(Array.from({ length: 32 }, () => run([binary])));
+      for (const execution of executions) {
+        expect(execution.exitCode, execution.stderr).toBe(0);
+      }
+      const contents = await readFile(appendPath, "utf8");
+      expect(contents.endsWith("\n")).toBe(true);
+      const lines = contents.split("\n").filter(Boolean);
+      expect(lines).toHaveLength(32);
+      for (const line of lines) {
+        expect(() => JSON.parse(line)).not.toThrow();
+      }
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "keeps metadata containing quotes and control characters valid",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-metadata-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "metadata.ndjson");
+      const body = [
+        "    let mut hid = String::new();",
+        "    hid.push('H');",
+        "    hid.push(char::from(34u8));",
+        "    hid.push(char::from(10u8));",
+        "    let mut msg = String::new();",
+        "    msg.push(char::from(9u8));",
+        '    msg.push_str("msg");',
+        "    msg.push(char::from(92u8));",
+        '    agent_debug_mode::emit(&hid, "loc", &msg, r#"{"ok":true}"#);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "rust-metadata.rs", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const event = JSON.parse(line ?? "") as {
+        hypothesisId: string;
+        message: string;
+        data: unknown;
+      };
+      expect(event.hypothesisId).toBe(`H"\n`);
+      expect(event.message).toBe(`\tmsg\\`);
+      expect(event.data).toEqual({ ok: true });
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "compiles when the helper is inserted into a realistic Rust file",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-realistic-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "realistic.ndjson");
+      const rendered = await render(home, rustFixture);
+      const source = await readFile(
+        join(root, "tests", "fixtures", "languages", "rust-realistic.rs"),
+        "utf8",
+      );
+      const materialized = materialize(
+        source,
+        rendered.data,
+        rustFixture,
+        appendPath.replaceAll("\\", "\\\\"),
+        1,
+        "&agent_debug_mode::json_string(&value.label)",
+      );
+      const fixturePath = join(workspace, "rust-realistic.rs");
+      await writeFile(fixturePath, materialized);
+      const result = await runSteps(rustFixture.command(fixturePath));
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      expect((JSON.parse(line ?? "") as { data: unknown }).data).toBe("inner-module");
+    },
+    180_000,
+  );
+
+  rustRuntimeTest(
+    "drops data with a raw control character to protect NDJSON framing",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-control-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "control.ndjson");
+      // A raw newline inside data_json would break NDJSON framing: the
+      // direct-append observer splits incoming.ndjson on 0x0A, so a forged second
+      // line would be ingested as a genuine event. The guard rejects any raw
+      // control byte (< 0x20), so nothing is ever written. Build the payloads from
+      // char codes so the Rust source needs no escaping: a raw newline splicing in
+      // a forged record, then a lone 0x01.
+      const body = [
+        "    let mut forged = String::new();",
+        '    forged.push_str("1");',
+        "    forged.push(char::from(10u8));",
+        '    forged.push_str("{\\"hypothesisId\\":\\"FORGED\\",\\"location\\":\\"x\\",\\"message\\":\\"x\\",\\"data\\":1,\\"timestamp\\":1}");',
+        '    agent_debug_mode::emit("H", "loc:1", "newline", &forged);',
+        "    let mut ctl = String::new();",
+        '    ctl.push_str("1");',
+        "    ctl.push(char::from(1u8));",
+        '    agent_debug_mode::emit("H", "loc:2", "control", &ctl);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "rust-control.rs", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
+    },
+    180_000,
+  );
+});
+
+// Serialized-JSON runtime coverage specific to C++: the caller supplies raw
+// JSON, so these exercise the emitter's raw-value passthrough, the json_string
+// fallback, size/validity bounds, concurrency, and realistic insertion.
+describe("cpp serialized-JSON template", () => {
+  const cpp = fixtures.find((candidate) => candidate.language === "cpp");
+  if (!cpp) {
+    throw new Error("Missing cpp fixture");
+  }
+  const cppFixture = cpp;
+  const cppRuntimeTest = cppFixture.runtime === null && !requireRuntimes ? test.skip : test;
+
+  // Compiles the rendered helper plus a bespoke main body appending to
+  // appendPath, then runs it. Returns the process result.
+  async function compileAndRun(
+    home: string,
+    workspace: string,
+    fileName: string,
+    body: string,
+    appendPath: string,
+  ) {
+    const rendered = await render(home, cppFixture);
+    const helper = rendered.data.helperTemplate.replaceAll(
+      "__APPEND_PATH__",
+      appendPath.replaceAll("\\", "\\\\"),
+    );
+    const source = `${helper}\n\n#include <iostream>\n#include <string>\n\nint main() {\n${body}\n    std::cout << "application-completed" << std::endl;\n    return 0;\n}\n`;
+    const fixturePath = join(workspace, fileName);
+    await writeFile(fixturePath, source);
+    return runSteps(cppFixture.command(fixturePath));
+  }
+
+  cppRuntimeTest(
+    "accepts serialized arrays, strings, numbers, booleans, and null",
+    async () => {
+      expect(cppFixture.runtime, "cpp runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-cpp-types-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "types.ndjson");
+      const body = [
+        '    agent_debug_mode::emit("H", "loc:1", "array", R"([1,2,3])");',
+        '    agent_debug_mode::emit("H", "loc:2", "string", agent_debug_mode::json_string("plain text"));',
+        '    agent_debug_mode::emit("H", "loc:3", "number", R"(42)");',
+        '    agent_debug_mode::emit("H", "loc:4", "boolean", R"(true)");',
+        '    agent_debug_mode::emit("H", "loc:5", "null", R"(null)");',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "cpp-types.cpp", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const lines = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const data = lines.map((line) => (JSON.parse(line) as { data: unknown }).data);
+      expect(data).toEqual([[1, 2, 3], "plain text", 42, true, null]);
+    },
+    180_000,
+  );
+
+  cppRuntimeTest(
+    "json_string escapes quotes, backslashes, control characters, and newlines",
+    async () => {
+      expect(cppFixture.runtime, "cpp runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-cpp-escape-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "escape.ndjson");
+      // Build the tricky text from char codes so the C++ source needs no
+      // escaping: a, quote, backslash, newline, tab, U+0001, z.
+      const body = [
+        "    std::string tricky;",
+        "    tricky.push_back('a');",
+        "    tricky.push_back(static_cast<char>(34));",
+        "    tricky.push_back(static_cast<char>(92));",
+        "    tricky.push_back(static_cast<char>(10));",
+        "    tricky.push_back(static_cast<char>(9));",
+        "    tricky.push_back(static_cast<char>(1));",
+        "    tricky.push_back('z');",
+        '    agent_debug_mode::emit("H", "loc", "escape", agent_debug_mode::json_string(tricky));',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "cpp-escape.cpp", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const event = JSON.parse(line ?? "") as { data: unknown };
+      const expected = `a"\\\n\t${String.fromCharCode(1)}z`;
+      expect(event.data).toBe(expected);
+    },
+    180_000,
+  );
+
+  cppRuntimeTest(
+    "records malformed raw JSON as rejected without affecting the application",
+    async () => {
+      expect(cppFixture.runtime, "cpp runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-cpp-malformed-"));
+      temporaryDirectories.push(home, workspace);
+      const created = await createSession(home);
+      try {
+        const body = '    agent_debug_mode::emit("H", "loc:7", "broken", R"({"broken":)");';
+        const result = await compileAndRun(
+          home,
+          workspace,
+          "cpp-malformed.cpp",
+          body,
+          created.data.appendPath,
+        );
+        expect(result.exitCode, result.stderr).toBe(0);
+        expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+        // The daemon needs a moment to observe the incoming line and classify it.
+        let diagnostics: unknown[] = [];
+        for (let attempt = 0; attempt < 80 && diagnostics.length === 0; attempt += 1) {
+          const status = await runCli(home, [
+            "status",
+            "--session",
+            created.data.sessionId,
+            "--json",
+          ]);
+          if (status.exitCode === 0) {
+            const parsed = JSON.parse(status.stdout) as { data: { diagnostics?: unknown[] } };
+            diagnostics = parsed.data.diagnostics ?? [];
+          }
+          if (diagnostics.length === 0) {
+            await Bun.sleep(50);
+          }
+        }
+        expect(diagnostics.length).toBeGreaterThan(0);
+        const logs = await runCli(home, ["logs", "--session", created.data.sessionId, "--json"]);
+        expect(logs.exitCode, logs.stderr).toBe(0);
+        // The malformed record is counted but not accepted: no valid record is
+        // ingested, and the daemon flags exactly one malformed record.
+        expect(JSON.parse(logs.stdout)).toMatchObject({
+          statistics: { malformedRecords: 1, validRecords: 0 },
+        });
+      } finally {
+        await runCli(home, ["stop", "--json"]);
+      }
+    },
+    180_000,
+  );
+
+  cppRuntimeTest(
+    "drops an oversize event without affecting the application",
+    async () => {
+      expect(cppFixture.runtime, "cpp runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-cpp-oversize-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "oversize.ndjson");
+      const body = [
+        '    std::string big = "[";',
+        "    for (int i = 0; i < 40000; i += 1) {",
+        '        big += "0,";',
+        "    }",
+        '    big += "0]";',
+        '    agent_debug_mode::emit("H", "loc", "oversize", big);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "cpp-oversize.cpp", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
+    },
+    180_000,
+  );
+
+  cppRuntimeTest(
+    "concurrent emitters append complete, independently parseable records",
+    async () => {
+      expect(cppFixture.runtime, "cpp runtime must be installed").not.toBeNull();
+      const compiler = Bun.which("clang++") ?? Bun.which("g++");
+      expect(compiler, "a C++ compiler must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-cpp-concurrent-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "concurrent.ndjson");
+      const rendered = await render(home, cppFixture);
+      const helper = rendered.data.helperTemplate.replaceAll(
+        "__APPEND_PATH__",
+        appendPath.replaceAll("\\", "\\\\"),
+      );
+      const source = `${helper}\n\nint main() {\n    agent_debug_mode::emit("H", "loc", "concurrent", R"({"n":1})");\n    return 0;\n}\n`;
+      const fixturePath = join(workspace, "cpp-concurrent.cpp");
+      const binary = join(
+        workspace,
+        process.platform === "win32" ? "cpp-concurrent.exe" : "cpp-concurrent.out",
+      );
+      await writeFile(fixturePath, source);
+      const compiled = await run([compiler ?? "", "-std=c++17", fixturePath, "-o", binary]);
+      expect(compiled.exitCode, compiled.stderr).toBe(0);
+      const executions = await Promise.all(Array.from({ length: 32 }, () => run([binary])));
+      for (const execution of executions) {
+        expect(execution.exitCode, execution.stderr).toBe(0);
+      }
+      const contents = await readFile(appendPath, "utf8");
+      expect(contents.endsWith("\n")).toBe(true);
+      const lines = contents.split("\n").filter(Boolean);
+      expect(lines).toHaveLength(32);
+      for (const line of lines) {
+        expect(() => JSON.parse(line)).not.toThrow();
+      }
+    },
+    180_000,
+  );
+
+  cppRuntimeTest(
+    "keeps metadata containing quotes and control characters valid",
+    async () => {
+      expect(cppFixture.runtime, "cpp runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-cpp-metadata-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "metadata.ndjson");
+      const body = [
+        "    std::string hid;",
+        "    hid.push_back('H');",
+        "    hid.push_back(static_cast<char>(34));",
+        "    hid.push_back(static_cast<char>(10));",
+        "    std::string msg;",
+        "    msg.push_back(static_cast<char>(9));",
+        '    msg += "msg";',
+        "    msg.push_back(static_cast<char>(92));",
+        '    agent_debug_mode::emit(hid, "loc", msg, R"({"ok":true})");',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "cpp-metadata.cpp", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const event = JSON.parse(line ?? "") as {
+        hypothesisId: string;
+        message: string;
+        data: unknown;
+      };
+      expect(event.hypothesisId).toBe(`H"\n`);
+      expect(event.message).toBe(`\tmsg\\`);
+      expect(event.data).toEqual({ ok: true });
+    },
+    180_000,
+  );
+
+  cppRuntimeTest(
+    "compiles when the helper is inserted into a realistic C++ file",
+    async () => {
+      expect(cppFixture.runtime, "cpp runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-cpp-realistic-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "realistic.ndjson");
+      const rendered = await render(home, cppFixture);
+      const source = await readFile(
+        join(root, "tests", "fixtures", "languages", "cpp-realistic.cpp"),
+        "utf8",
+      );
+      const materialized = materialize(
+        source,
+        rendered.data,
+        cppFixture,
+        appendPath.replaceAll("\\", "\\\\"),
+        1,
+        "agent_debug_mode::json_string(value.label)",
+      );
+      const fixturePath = join(workspace, "cpp-realistic.cpp");
+      await writeFile(fixturePath, materialized);
+      const result = await runSteps(cppFixture.command(fixturePath));
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      expect((JSON.parse(line ?? "") as { data: unknown }).data).toBe("inner-module");
+    },
+    180_000,
+  );
+
+  cppRuntimeTest(
+    "drops data with a raw control character to protect NDJSON framing",
+    async () => {
+      expect(cppFixture.runtime, "cpp runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-cpp-control-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "control.ndjson");
+      // A raw newline inside data_json would break NDJSON framing: the
+      // direct-append observer splits incoming.ndjson on 0x0A, so a forged second
+      // line would be ingested as a genuine event. The guard rejects any raw
+      // control byte (< 0x20), so nothing is ever written. Build the payloads from
+      // char codes so the C++ source needs no escaping: a raw newline splicing in
+      // a forged record, then a lone 0x01.
+      const body = [
+        "    std::string forged;",
+        '    forged += "1";',
+        "    forged.push_back(static_cast<char>(10));",
+        '    forged += "{\\"hypothesisId\\":\\"FORGED\\",\\"location\\":\\"x\\",\\"message\\":\\"x\\",\\"data\\":1,\\"timestamp\\":1}";',
+        '    agent_debug_mode::emit("H", "loc:1", "newline", forged);',
+        "    std::string ctl;",
+        '    ctl += "1";',
+        "    ctl.push_back(static_cast<char>(1));",
+        '    agent_debug_mode::emit("H", "loc:2", "control", ctl);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "cpp-control.cpp", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
+    },
+    180_000,
+  );
+});
+
+// Serialized-JSON runtime coverage specific to C: the caller supplies raw JSON,
+// so these exercise the emitter's raw-value passthrough, the json_string
+// fallback, size/validity bounds, concurrency, and realistic insertion.
+describe("c serialized-JSON template", () => {
+  const c = fixtures.find((candidate) => candidate.language === "c");
+  if (!c) {
+    throw new Error("Missing c fixture");
+  }
+  const cFixture = c;
+  const cRuntimeTest = cFixture.runtime === null && !requireRuntimes ? test.skip : test;
+
+  // Compiles the rendered helper plus a bespoke main body appending to
+  // appendPath, then runs it. Returns the process result.
+  async function compileAndRun(
+    home: string,
+    workspace: string,
+    fileName: string,
+    body: string,
+    appendPath: string,
+  ) {
+    const rendered = await render(home, cFixture);
+    const helper = rendered.data.helperTemplate.replaceAll(
+      "__APPEND_PATH__",
+      appendPath.replaceAll("\\", "\\\\"),
+    );
+    const source = `${helper}\n\nint main(void) {\n${body}\n    printf("application-completed\\n");\n    return 0;\n}\n`;
+    const fixturePath = join(workspace, fileName);
+    await writeFile(fixturePath, source);
+    return runSteps(cFixture.command(fixturePath));
+  }
+
+  cRuntimeTest(
+    "accepts serialized arrays, strings, numbers, booleans, and null",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-types-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "types.ndjson");
+      const body = [
+        '    agent_debug_emit("H", "loc:1", "array", "[1,2,3]");',
+        '    agent_debug_emit("H", "loc:2", "string", agent_debug_json_string("plain text"));',
+        '    agent_debug_emit("H", "loc:3", "number", "42");',
+        '    agent_debug_emit("H", "loc:4", "boolean", "true");',
+        '    agent_debug_emit("H", "loc:5", "null", "null");',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "c-types.c", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const lines = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const data = lines.map((line) => (JSON.parse(line) as { data: unknown }).data);
+      expect(data).toEqual([[1, 2, 3], "plain text", 42, true, null]);
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "json_string escapes quotes, backslashes, control characters, and newlines",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-escape-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "escape.ndjson");
+      // Build the tricky text from char codes so the C source needs no escaping:
+      // a, quote, backslash, newline, tab, U+0001, z.
+      const body = [
+        "    char tricky[8];",
+        "    tricky[0] = 'a';",
+        "    tricky[1] = (char)34;",
+        "    tricky[2] = (char)92;",
+        "    tricky[3] = (char)10;",
+        "    tricky[4] = (char)9;",
+        "    tricky[5] = (char)1;",
+        "    tricky[6] = 'z';",
+        "    tricky[7] = 0;",
+        '    agent_debug_emit("H", "loc", "escape", agent_debug_json_string(tricky));',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "c-escape.c", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const event = JSON.parse(line ?? "") as { data: unknown };
+      const expected = `a"\\\n\t${String.fromCharCode(1)}z`;
+      expect(event.data).toBe(expected);
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "records malformed raw JSON as rejected without affecting the application",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-malformed-"));
+      temporaryDirectories.push(home, workspace);
+      const created = await createSession(home);
+      try {
+        const body = '    agent_debug_emit("H", "loc:7", "broken", "{\\"broken\\":");';
+        const result = await compileAndRun(
+          home,
+          workspace,
+          "c-malformed.c",
+          body,
+          created.data.appendPath,
+        );
+        expect(result.exitCode, result.stderr).toBe(0);
+        expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+        // The daemon needs a moment to observe the incoming line and classify it.
+        let diagnostics: unknown[] = [];
+        for (let attempt = 0; attempt < 80 && diagnostics.length === 0; attempt += 1) {
+          const status = await runCli(home, [
+            "status",
+            "--session",
+            created.data.sessionId,
+            "--json",
+          ]);
+          if (status.exitCode === 0) {
+            const parsed = JSON.parse(status.stdout) as { data: { diagnostics?: unknown[] } };
+            diagnostics = parsed.data.diagnostics ?? [];
+          }
+          if (diagnostics.length === 0) {
+            await Bun.sleep(50);
+          }
+        }
+        expect(diagnostics.length).toBeGreaterThan(0);
+        const logs = await runCli(home, ["logs", "--session", created.data.sessionId, "--json"]);
+        expect(logs.exitCode, logs.stderr).toBe(0);
+        // The malformed record is counted but not accepted: no valid record is
+        // ingested, and the daemon flags exactly one malformed record.
+        expect(JSON.parse(logs.stdout)).toMatchObject({
+          statistics: { malformedRecords: 1, validRecords: 0 },
+        });
+      } finally {
+        await runCli(home, ["stop", "--json"]);
+      }
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "drops an oversize event without affecting the application",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-oversize-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "oversize.ndjson");
+      const body = [
+        "    static char big[90002];",
+        "    size_t bi = 0;",
+        "    big[bi] = '[';",
+        "    bi += 1;",
+        "    for (int i = 0; i < 40000; i += 1) {",
+        "        big[bi] = '0';",
+        "        bi += 1;",
+        "        big[bi] = ',';",
+        "        bi += 1;",
+        "    }",
+        "    big[bi] = '0';",
+        "    bi += 1;",
+        "    big[bi] = ']';",
+        "    bi += 1;",
+        "    big[bi] = 0;",
+        '    agent_debug_emit("H", "loc", "oversize", big);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "c-oversize.c", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "concurrent emitters append complete, independently parseable records",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const compiler = Bun.which("clang") ?? Bun.which("gcc");
+      expect(compiler, "a C compiler must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-concurrent-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "concurrent.ndjson");
+      const rendered = await render(home, cFixture);
+      const helper = rendered.data.helperTemplate.replaceAll(
+        "__APPEND_PATH__",
+        appendPath.replaceAll("\\", "\\\\"),
+      );
+      const source = `${helper}\n\nint main(void) {\n    agent_debug_emit("H", "loc", "concurrent", "{\\"n\\":1}");\n    return 0;\n}\n`;
+      const fixturePath = join(workspace, "c-concurrent.c");
+      const binary = join(
+        workspace,
+        process.platform === "win32" ? "c-concurrent.exe" : "c-concurrent.out",
+      );
+      await writeFile(fixturePath, source);
+      const compiled = await run([compiler ?? "", "-std=c99", fixturePath, "-o", binary]);
+      expect(compiled.exitCode, compiled.stderr).toBe(0);
+      const executions = await Promise.all(Array.from({ length: 32 }, () => run([binary])));
+      for (const execution of executions) {
+        expect(execution.exitCode, execution.stderr).toBe(0);
+      }
+      const contents = await readFile(appendPath, "utf8");
+      expect(contents.endsWith("\n")).toBe(true);
+      const lines = contents.split("\n").filter(Boolean);
+      expect(lines).toHaveLength(32);
+      for (const line of lines) {
+        expect(() => JSON.parse(line)).not.toThrow();
+      }
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "keeps metadata containing quotes and control characters valid",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-metadata-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "metadata.ndjson");
+      const body = [
+        "    char hid[4];",
+        "    hid[0] = 'H';",
+        "    hid[1] = (char)34;",
+        "    hid[2] = (char)10;",
+        "    hid[3] = 0;",
+        "    char msg[6];",
+        "    msg[0] = (char)9;",
+        "    msg[1] = 'm';",
+        "    msg[2] = 's';",
+        "    msg[3] = 'g';",
+        "    msg[4] = (char)92;",
+        "    msg[5] = 0;",
+        '    agent_debug_emit(hid, "loc", msg, "{\\"ok\\":true}");',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "c-metadata.c", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      const event = JSON.parse(line ?? "") as {
+        hypothesisId: string;
+        message: string;
+        data: unknown;
+      };
+      expect(event.hypothesisId).toBe(`H"\n`);
+      expect(event.message).toBe(`\tmsg\\`);
+      expect(event.data).toEqual({ ok: true });
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "compiles when the helper is inserted into a realistic C file",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-realistic-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "realistic.ndjson");
+      const rendered = await render(home, cFixture);
+      const source = await readFile(
+        join(root, "tests", "fixtures", "languages", "c-realistic.c"),
+        "utf8",
+      );
+      const materialized = materialize(
+        source,
+        rendered.data,
+        cFixture,
+        appendPath.replaceAll("\\", "\\\\"),
+        1,
+        "agent_debug_json_string(value.label)",
+      );
+      const fixturePath = join(workspace, "c-realistic.c");
+      await writeFile(fixturePath, materialized);
+      const result = await runSteps(cFixture.command(fixturePath));
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
+      expect((JSON.parse(line ?? "") as { data: unknown }).data).toBe("inner-module");
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "drops data with a raw control character to protect NDJSON framing",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-control-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "control.ndjson");
+      // A raw newline inside data_json would break NDJSON framing: the
+      // direct-append observer splits incoming.ndjson on 0x0A, so a forged second
+      // line would be ingested as a genuine event. The guard rejects any raw
+      // control byte (< 0x20), so nothing is ever written. Build the payloads by
+      // index so the C source needs no escaping: a raw newline splicing in a
+      // forged record, then a lone 0x01.
+      const body = [
+        "    char forged[80];",
+        "    size_t fi = 0;",
+        "    forged[fi] = '1';",
+        "    fi += 1;",
+        "    forged[fi] = (char)10;",
+        "    fi += 1;",
+        '    const char *rest = "{\\"hypothesisId\\":\\"FORGED\\",\\"data\\":1}";',
+        "    for (const char *p = rest; *p != 0; p += 1) {",
+        "        forged[fi] = *p;",
+        "        fi += 1;",
+        "    }",
+        "    forged[fi] = 0;",
+        '    agent_debug_emit("H", "loc:1", "newline", forged);',
+        "    char ctl[4];",
+        "    ctl[0] = '1';",
+        "    ctl[1] = (char)1;",
+        "    ctl[2] = 0;",
+        '    agent_debug_emit("H", "loc:2", "control", ctl);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "c-control.c", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
+    },
+    180_000,
+  );
 });
 
 // Fault-injection coverage for the capture proxy's forward retry. This is the

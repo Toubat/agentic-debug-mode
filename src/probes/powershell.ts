@@ -125,6 +125,8 @@ export function renderPowerShellTemplate(): ProbeTemplates {
     ].join("\n"),
     ingest: "file",
     language: "powershell",
+    dataEncoding: "native-json-value",
+    placement: { call: "statement", helper: "top-level" },
     placeholders: {
       __APPEND_PATH__: "Replace with the appendPath returned by debug-mode create.",
       __DATA_EXPRESSION__:

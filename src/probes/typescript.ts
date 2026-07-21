@@ -92,6 +92,8 @@ export function renderTypeScriptTemplate(): ProbeTemplates {
     helperTemplate,
     ingest: "http",
     language: "typescript",
+    dataEncoding: "native-json-value",
+    placement: { call: "statement", helper: "top-level" },
     placeholders: {
       __DATA_EXPRESSION__:
         "Replace with a JSON-compatible TypeScript expression that has no secrets.",

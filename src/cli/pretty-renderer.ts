@@ -233,13 +233,23 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   );
 }
 
+function isPlacement(value: unknown): value is { call: string; helper: string } {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const placement = value as Record<string, unknown>;
+  return typeof placement.helper === "string" && typeof placement.call === "string";
+}
+
 function renderTemplateData(data: Record<string, unknown>): string[] | undefined {
-  const { callTemplate, eventSchema, helperTemplate, placeholders } = data;
+  const { callTemplate, dataEncoding, eventSchema, helperTemplate, placeholders, placement } = data;
   if (
     typeof helperTemplate !== "string" ||
     typeof callTemplate !== "string" ||
+    typeof dataEncoding !== "string" ||
     !isStringRecord(placeholders) ||
-    !isStringRecord(eventSchema)
+    !isStringRecord(eventSchema) ||
+    !isPlacement(placement)
   ) {
     return undefined;
   }
@@ -250,6 +260,13 @@ function renderTemplateData(data: Record<string, unknown>): string[] | undefined
     "",
     "CALL TEMPLATE",
     ...callTemplate.split("\n"),
+    "",
+    "DATA ENCODING",
+    dataEncoding,
+    "",
+    "PLACEMENT",
+    `Helper  ${placement.helper}`,
+    `Call    ${placement.call}`,
     "",
     "PLACEHOLDERS",
     ...Object.entries(placeholders).map(

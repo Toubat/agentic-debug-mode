@@ -59,6 +59,22 @@ describe("retryOnWindowsLock", () => {
     expect(calls).toBe(1);
   });
 
+  test("retries EFAULT from a recursive delete on win32", async () => {
+    let calls = 0;
+    const result = await retryOnWindowsLock(
+      async () => {
+        calls += 1;
+        if (calls < 3) {
+          throw errorWithCode("EFAULT");
+        }
+        return "removed";
+      },
+      { platform: "win32", sleep: async () => undefined },
+    );
+    expect(result).toBe("removed");
+    expect(calls).toBe(3);
+  });
+
   test("rethrows non-lock error codes without retrying on win32", async () => {
     let calls = 0;
     await expect(

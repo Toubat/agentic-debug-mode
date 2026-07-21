@@ -359,6 +359,11 @@ describe("command result rendering", () => {
     expect(rendered).toContain("CALL TEMPLATE");
     expect(rendered).toContain("PLACEHOLDERS");
     expect(rendered).toContain("EVENT SCHEMA");
+    expect(rendered).toContain("DATA ENCODING");
+    expect(rendered).toContain("native-json-value");
+    expect(rendered).toContain("PLACEMENT");
+    expect(rendered).toContain("Helper  top-level");
+    expect(rendered).toContain("Call    statement");
     expect(rendered).toContain("timestamp  Unix epoch milliseconds");
     expect(rendered).not.toContain("helperTemplate");
     expect(rendered).not.toContain("callTemplate");

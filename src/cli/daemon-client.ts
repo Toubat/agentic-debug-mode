@@ -1,4 +1,5 @@
 import type { DaemonConnection, DaemonMetadata } from "../daemon/protocol";
+import { inspectProcess } from "../native/system";
 
 export class DaemonControlError extends Error {
   constructor(
@@ -73,9 +74,47 @@ export async function requestDaemonShutdown(connection: DaemonConnection): Promi
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (!(await readDaemonHealth(connection))) {
+      await waitForRecordedProcessExit(connection, deadline);
       return;
     }
     await Bun.sleep(20);
   }
   throw new Error("Daemon did not stop before the shutdown deadline");
+}
+
+// Once the daemon stops answering health checks its listener socket is closed, but
+// on Windows the process can briefly outlive that moment while it unwinds and the
+// OS releases the mandatory locks it holds on files under the daemon home (spool,
+// state, native addon). Callers — the `stop` command and integration tests alike —
+// routinely delete that home directory the instant shutdown returns, so on win32
+// wait for the recorded process to actually exit first; otherwise the delete races
+// a dying process and surfaces as EBUSY/EACCES/EFAULT. The recorded identity guards
+// against a reused pid. POSIX has no such mandatory locks, so it returns as soon as
+// the daemon stops answering. If the process somehow lingers past the shutdown
+// deadline it has still acknowledged and stopped serving, so return rather than
+// fail; the callers' filesystem retries cover the residual window.
+async function waitForRecordedProcessExit(
+  connection: Pick<DaemonConnection, "pid" | "processIdentity">,
+  deadline: number,
+): Promise<void> {
+  // A real daemon is always a separate spawned process; only then can waiting for
+  // it to exit release locks the caller is about to act on. An in-process server
+  // (integration tests that call startDaemonServer directly) records the current
+  // pid, which will never exit here — closing its listener is all the caller can
+  // observe, so return once health is already down rather than spin to the deadline.
+  if (process.platform !== "win32" || connection.pid === process.pid) {
+    return;
+  }
+  while (Date.now() < deadline) {
+    const current = inspectProcess(connection.pid);
+    if (
+      !current.exists ||
+      current.zombie ||
+      current.startTime !== connection.processIdentity.startTime ||
+      current.executable !== connection.processIdentity.executable
+    ) {
+      return;
+    }
+    await Bun.sleep(20);
+  }
 }

@@ -115,9 +115,53 @@ The first supported combinations are:
 - PowerShell + file
 - C# + file
 - Swift + file
+- Rust + file
+- C++ + file
+- C + file
+- Java + file
+- Kotlin + file
 
-Every advertised combination must pass a live end-to-end test with its real runtime. Rust, Java,
-Kotlin, C, C++, and shell are not advertised until a safe serializer contract is defined.
+Every advertised combination must pass a live end-to-end test with its real runtime. Shell is
+not advertised until a safe serializer contract is defined.
+
+#### Data encoding
+
+Each template declares how its call site supplies the `data` field:
+
+- `native-json-value`: the call site passes a native language value, and the helper serializes and
+  redacts it client-side. JavaScript, TypeScript, and the languages with a safe standard JSON
+  facility (Python, Go, Ruby, PHP, PowerShell, C#, Swift, Java, Kotlin) keep this encoding. Their
+  data placeholder is `__DATA_EXPRESSION__`.
+- `serialized-json`: the call site passes an expression that already evaluates to one complete
+  serialized JSON value, inserted verbatim after `"data":`. Rust, C++, and C use this encoding
+  because their languages have no standard structured JSON value; embedding a recursive serializer
+  and redactor in every instrumented file was disproportionately large. Their data placeholder is
+  `__DATA_JSON_EXPRESSION__`.
+
+Serialized-JSON helpers expose one small fallback, `json_string(text)` (C++/Rust
+`agent_debug_mode::json_string`, C `agent_debug_json_string`), that encodes arbitrary text as a
+JSON string when the application has no serializer. The agent must never concatenate unescaped
+strings into raw JSON by hand.
+
+#### Placement
+
+Each template declares machine-readable placement so the helper lands at a legal location:
+
+- `helper: "file-start"` — C and C++ (their includes and `#define`s must precede declarations).
+- `helper: "top-level"` — Rust and every other language (module or file scope).
+- `call: "statement"` — every language inserts each call in statement position.
+
+The agent inserts the helper once at the required location and wraps every call and the helper in
+its own foldable `// #region agent log` / `// #endregion` region (or the language's line-comment
+equivalent) so instrumentation is easy to find and remove.
+
+#### Secret responsibility
+
+The call site is responsible for excluding secrets: the agent chooses the smallest diagnostic value
+that tests a hypothesis and never places credentials, tokens, or unnecessary personally
+identifiable information in `data`. Helpers do not scan or redact before transport. The daemon still
+validates and redacts accepted JSON before canonical persistence, so daemon redaction is
+defense-in-depth, not permission to send secrets.
 
 ### `debug-mode reset --session <id>`
 
@@ -277,11 +321,13 @@ is stored once in session metadata.
 
 ```text
 POST /ingest/<sessionId>
-Content-Type: application/json
+Content-Type: application/x-ndjson
 ```
 
-There is no separate token, capability terminology, session header, or session field in the body.
-The loopback route determines the session.
+The HTTP helpers post newline-delimited JSON, so the actual request content type is
+`application/x-ndjson`; the daemon parses the body as one-or-more NDJSON records. There is no
+separate token, capability terminology, session header, or session field in the body. The loopback
+route determines the session.
 
 ### File
 

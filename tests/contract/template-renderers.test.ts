@@ -19,14 +19,16 @@ const supported = [
   ["powershell", "file"],
   ["csharp", "file"],
   ["swift", "file"],
+  ["rust", "file"],
+  ["cpp", "file"],
+  ["c", "file"],
+  ["java", "file"],
+  ["kotlin", "file"],
 ] as const satisfies readonly (readonly [TemplateLanguage, IngestMethod])[];
 
-const callPlaceholders = [
-  "__HYPOTHESIS_ID__",
-  "__LOCATION__",
-  "__MESSAGE__",
-  "__DATA_EXPRESSION__",
-] as const;
+const callMetadataPlaceholders = ["__HYPOTHESIS_ID__", "__LOCATION__", "__MESSAGE__"] as const;
+
+const serializedJsonLanguages = new Set<TemplateLanguage>(["rust", "cpp", "c"]);
 
 describe("session-independent template renderers", () => {
   for (const [language, ingest] of supported) {
@@ -36,10 +38,22 @@ describe("session-independent template renderers", () => {
       const otherTarget = ingest === "http" ? "__APPEND_PATH__" : "__INGEST_URL__";
 
       expect(template).toMatchObject({ ingest, language });
+      expect(template.dataEncoding).toBe(
+        serializedJsonLanguages.has(language) ? "serialized-json" : "native-json-value",
+      );
+      expect(template.placement.call).toBe("statement");
+      expect(template.placement.helper).toBe(
+        language === "c" || language === "cpp" ? "file-start" : "top-level",
+      );
       expect(template.helperTemplate).toContain(target);
       expect(template.helperTemplate).not.toContain(otherTarget);
       expect(template.callTemplate).not.toContain(target);
       expect(template.callTemplate).not.toContain(otherTarget);
+      const dataPlaceholder =
+        template.dataEncoding === "serialized-json"
+          ? "__DATA_JSON_EXPRESSION__"
+          : "__DATA_EXPRESSION__";
+      const callPlaceholders = [...callMetadataPlaceholders, dataPlaceholder];
       for (const placeholder of callPlaceholders) {
         expect(template.helperTemplate).not.toContain(placeholder);
         expect(template.callTemplate).toContain(placeholder);
@@ -53,9 +67,107 @@ describe("session-independent template renderers", () => {
       expect(template.helperTemplate).toContain("agent log");
       expect(template.callTemplate).toContain("agent log");
       expect(template.helperTemplate).toMatch(/65_?536|65536|64 \* 1024/);
-      expect(template.helperTemplate.toLowerCase()).toMatch(/active|depth/);
+      // The recursive value model carries depth/active-set bookkeeping; the
+      // serialized-JSON emitters delegate value modeling to the caller and have
+      // neither.
+      if (template.dataEncoding === "native-json-value") {
+        expect(template.helperTemplate.toLowerCase()).toMatch(/active|depth/);
+      }
     });
   }
+
+  test("rust emits serialized JSON through an isolated helper module", () => {
+    const template = renderTemplate("rust", "file");
+    expect(template.dataEncoding).toBe("serialized-json");
+    expect(template.placement).toEqual({ call: "statement", helper: "top-level" });
+    expect(template.callTemplate).toContain("__DATA_JSON_EXPRESSION__");
+    expect(template.callTemplate).not.toContain("__DATA_EXPRESSION__");
+    expect(template.helperTemplate).not.toContain("__DATA_EXPRESSION__");
+    expect(template.helperTemplate).toContain("mod agent_debug_mode");
+    // Rejects raw control bytes in data_json to protect NDJSON framing.
+    expect(template.helperTemplate).toContain("byte < 32");
+    expect(template.helperTemplate).toContain("65536");
+    expect(template.helperTemplate).toContain("// #region agent log");
+    expect(template.helperTemplate).toContain("// #endregion");
+    expect(template.callTemplate).toContain("// #region agent log");
+    const combined = `${template.helperTemplate}\n${template.callTemplate}`;
+    for (const removed of ["AgentValue", "AgentKind", "adbg"]) {
+      expect(combined).not.toContain(removed);
+    }
+    expect(Object.keys(template.placeholders).sort()).toEqual(
+      [
+        "__APPEND_PATH__",
+        "__DATA_JSON_EXPRESSION__",
+        "__HYPOTHESIS_ID__",
+        "__LOCATION__",
+        "__MESSAGE__",
+      ].sort(),
+    );
+  });
+
+  test("cpp emits serialized JSON through an isolated helper namespace", () => {
+    const template = renderTemplate("cpp", "file");
+    expect(template.dataEncoding).toBe("serialized-json");
+    expect(template.placement).toEqual({ call: "statement", helper: "file-start" });
+    expect(template.callTemplate).toContain("__DATA_JSON_EXPRESSION__");
+    expect(template.callTemplate).not.toContain("__DATA_EXPRESSION__");
+    expect(template.helperTemplate).not.toContain("__DATA_EXPRESSION__");
+    expect(template.helperTemplate).toContain("namespace agent_debug_mode");
+    // Rejects raw control bytes in data_json to protect NDJSON framing.
+    expect(template.helperTemplate).toContain("c < 0x20");
+    expect(template.helperTemplate).toContain("65536");
+    expect(template.helperTemplate).toContain("// #region agent log");
+    expect(template.helperTemplate).toContain("// #endregion");
+    expect(template.callTemplate).toContain("// #region agent log");
+    const combined = `${template.helperTemplate}\n${template.callTemplate}`;
+    // The deleted value model, its initializer-list object detection, and the
+    // client-side secret redaction must all be gone.
+    for (const removed of ["AgentValue", "AgentKind", "initializer_list", "REDACTED", "secret"]) {
+      expect(combined).not.toContain(removed);
+    }
+    expect(Object.keys(template.placeholders).sort()).toEqual(
+      [
+        "__APPEND_PATH__",
+        "__DATA_JSON_EXPRESSION__",
+        "__HYPOTHESIS_ID__",
+        "__LOCATION__",
+        "__MESSAGE__",
+      ].sort(),
+    );
+  });
+
+  test("c emits serialized JSON through a distinctively prefixed helper", () => {
+    const template = renderTemplate("c", "file");
+    expect(template.dataEncoding).toBe("serialized-json");
+    expect(template.placement).toEqual({ call: "statement", helper: "file-start" });
+    expect(template.callTemplate).toContain("__DATA_JSON_EXPRESSION__");
+    expect(template.callTemplate).not.toContain("__DATA_EXPRESSION__");
+    expect(template.helperTemplate).not.toContain("__DATA_EXPRESSION__");
+    expect(template.helperTemplate).toContain("agent_debug_emit");
+    expect(template.helperTemplate).toContain("agent_debug_json_string");
+    // Rejects raw control bytes in data_json to protect NDJSON framing.
+    expect(template.helperTemplate).toContain("*scan < 0x20");
+    expect(template.helperTemplate).toContain("65536");
+    expect(template.helperTemplate).toContain("// #region agent log");
+    expect(template.helperTemplate).toContain("// #endregion");
+    expect(template.callTemplate).toContain("// #region agent log");
+    const combined = `${template.helperTemplate}\n${template.callTemplate}`;
+    // C has no namespaces, so the migration removes the old global value model,
+    // its variadic builders, and the client-side secret redaction, isolating the
+    // remaining helper behind a distinctive agent_debug_ prefix.
+    for (const removed of ["AgentValue", "AgentKind", "adbg", "REDACTED", "secret"]) {
+      expect(combined).not.toContain(removed);
+    }
+    expect(Object.keys(template.placeholders).sort()).toEqual(
+      [
+        "__APPEND_PATH__",
+        "__DATA_JSON_EXPRESSION__",
+        "__HYPOTHESIS_ID__",
+        "__LOCATION__",
+        "__MESSAGE__",
+      ].sort(),
+    );
+  });
 
   test("HTTP helpers clean up every fulfilled response body", () => {
     for (const language of ["javascript", "typescript"]) {
@@ -109,6 +221,17 @@ describe("session-independent template renderers", () => {
     expect(renderTemplate("C#", "file").language).toBe("csharp");
     expect(renderTemplate("cs", "file").language).toBe("csharp");
     expect(renderTemplate("SWIFT", "FILE").language).toBe("swift");
+    expect(renderTemplate("Rust", "FILE").language).toBe("rust");
+    expect(renderTemplate("rs", "file").language).toBe("rust");
+    expect(renderTemplate("CPP", "FILE").language).toBe("cpp");
+    expect(renderTemplate("C++", "file").language).toBe("cpp");
+    expect(renderTemplate("cxx", "file").language).toBe("cpp");
+    expect(renderTemplate("C", "FILE").language).toBe("c");
+    expect(renderTemplate("c", "file").language).toBe("c");
+    expect(renderTemplate("Java", "FILE").language).toBe("java");
+    expect(renderTemplate("java", "file").language).toBe("java");
+    expect(renderTemplate("Kotlin", "FILE").language).toBe("kotlin");
+    expect(renderTemplate("kt", "file").language).toBe("kotlin");
   });
 
   test("rejects every unadvertised language and ingest pair with a typed error", () => {
@@ -122,7 +245,11 @@ describe("session-independent template renderers", () => {
       ["powershell", "http"],
       ["csharp", "http"],
       ["swift", "http"],
-      ["rust", "file"],
+      ["rust", "http"],
+      ["cpp", "http"],
+      ["c", "http"],
+      ["java", "http"],
+      ["kotlin", "http"],
       ["javascript", "socket"],
     ] as const) {
       try {

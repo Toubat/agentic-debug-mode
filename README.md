@@ -6,7 +6,7 @@ reproduces the failure, and proves the root cause with runtime evidence before i
 
 Inspired from [Cursor's debug mode](https://cursor.com/blog/debug-mode) and built upon it: the same
 hypothesis-driven core, made agent-agnostic (any coding agent that can run a CLI), and extended
-with a session-scoped evidence store, hypothesis-tagged probes across nine languages, embedded
+with a session-scoped evidence store, hypothesis-tagged probes across fourteen languages, embedded
 structured queries over captured events, at-source secret redaction, and bounded reads that keep
 large evidence sets token-cheap.
 
@@ -86,6 +86,11 @@ runtime:
 | PowerShell | file      |
 | C#         | file      |
 | Swift      | file      |
+| Rust       | file      |
+| C++        | file      |
+| C          | file      |
+| Java       | file      |
+| Kotlin     | file      |
 
 ## Development
 
