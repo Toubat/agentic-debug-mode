@@ -1327,6 +1327,40 @@ describe("rust serialized-JSON template", () => {
     },
     180_000,
   );
+
+  rustRuntimeTest(
+    "drops data with a raw control character to protect NDJSON framing",
+    async () => {
+      expect(rustFixture.runtime, "rust runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-rust-control-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "control.ndjson");
+      // A raw newline inside data_json would break NDJSON framing: the
+      // direct-append observer splits incoming.ndjson on 0x0A, so a forged second
+      // line would be ingested as a genuine event. The guard rejects any raw
+      // control byte (< 0x20), so nothing is ever written. Build the payloads from
+      // char codes so the Rust source needs no escaping: a raw newline splicing in
+      // a forged record, then a lone 0x01.
+      const body = [
+        "    let mut forged = String::new();",
+        '    forged.push_str("1");',
+        "    forged.push(char::from(10u8));",
+        '    forged.push_str("{\\"hypothesisId\\":\\"FORGED\\",\\"location\\":\\"x\\",\\"message\\":\\"x\\",\\"data\\":1,\\"timestamp\\":1}");',
+        '    agent_debug_mode::emit("H", "loc:1", "newline", &forged);',
+        "    let mut ctl = String::new();",
+        '    ctl.push_str("1");',
+        "    ctl.push(char::from(1u8));",
+        '    agent_debug_mode::emit("H", "loc:2", "control", &ctl);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "rust-control.rs", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
+    },
+    180_000,
+  );
 });
 
 // Serialized-JSON runtime coverage specific to C++: the caller supplies raw
@@ -1592,6 +1626,40 @@ describe("cpp serialized-JSON template", () => {
       expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
       const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
       expect((JSON.parse(line ?? "") as { data: unknown }).data).toBe("inner-module");
+    },
+    180_000,
+  );
+
+  cppRuntimeTest(
+    "drops data with a raw control character to protect NDJSON framing",
+    async () => {
+      expect(cppFixture.runtime, "cpp runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-cpp-control-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "control.ndjson");
+      // A raw newline inside data_json would break NDJSON framing: the
+      // direct-append observer splits incoming.ndjson on 0x0A, so a forged second
+      // line would be ingested as a genuine event. The guard rejects any raw
+      // control byte (< 0x20), so nothing is ever written. Build the payloads from
+      // char codes so the C++ source needs no escaping: a raw newline splicing in
+      // a forged record, then a lone 0x01.
+      const body = [
+        "    std::string forged;",
+        '    forged += "1";',
+        "    forged.push_back(static_cast<char>(10));",
+        '    forged += "{\\"hypothesisId\\":\\"FORGED\\",\\"location\\":\\"x\\",\\"message\\":\\"x\\",\\"data\\":1,\\"timestamp\\":1}";',
+        '    agent_debug_mode::emit("H", "loc:1", "newline", forged);',
+        "    std::string ctl;",
+        '    ctl += "1";',
+        "    ctl.push_back(static_cast<char>(1));",
+        '    agent_debug_mode::emit("H", "loc:2", "control", ctl);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "cpp-control.cpp", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
     },
     180_000,
   );
@@ -1875,6 +1943,49 @@ describe("c serialized-JSON template", () => {
       expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
       const [line] = (await readFile(appendPath, "utf8")).trim().split("\n");
       expect((JSON.parse(line ?? "") as { data: unknown }).data).toBe("inner-module");
+    },
+    180_000,
+  );
+
+  cRuntimeTest(
+    "drops data with a raw control character to protect NDJSON framing",
+    async () => {
+      expect(cFixture.runtime, "c runtime must be installed").not.toBeNull();
+      const home = await mkdtemp(join(tmpdir(), "debug-mode-home-"));
+      const workspace = await mkdtemp(join(tmpdir(), "debug-mode-c-control-"));
+      temporaryDirectories.push(home, workspace);
+      const appendPath = join(workspace, "control.ndjson");
+      // A raw newline inside data_json would break NDJSON framing: the
+      // direct-append observer splits incoming.ndjson on 0x0A, so a forged second
+      // line would be ingested as a genuine event. The guard rejects any raw
+      // control byte (< 0x20), so nothing is ever written. Build the payloads by
+      // index so the C source needs no escaping: a raw newline splicing in a
+      // forged record, then a lone 0x01.
+      const body = [
+        "    char forged[80];",
+        "    size_t fi = 0;",
+        "    forged[fi] = '1';",
+        "    fi += 1;",
+        "    forged[fi] = (char)10;",
+        "    fi += 1;",
+        '    const char *rest = "{\\"hypothesisId\\":\\"FORGED\\",\\"data\\":1}";',
+        "    for (const char *p = rest; *p != 0; p += 1) {",
+        "        forged[fi] = *p;",
+        "        fi += 1;",
+        "    }",
+        "    forged[fi] = 0;",
+        '    agent_debug_emit("H", "loc:1", "newline", forged);',
+        "    char ctl[4];",
+        "    ctl[0] = '1';",
+        "    ctl[1] = (char)1;",
+        "    ctl[2] = 0;",
+        '    agent_debug_emit("H", "loc:2", "control", ctl);',
+      ].join("\n");
+      const result = await compileAndRun(home, workspace, "c-control.c", body, appendPath);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("application-completed");
+      const raw = await readFile(appendPath, "utf8").catch(() => "");
+      expect(raw).toBe("");
     },
     180_000,
   );

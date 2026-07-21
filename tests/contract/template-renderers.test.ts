@@ -84,6 +84,8 @@ describe("session-independent template renderers", () => {
     expect(template.callTemplate).not.toContain("__DATA_EXPRESSION__");
     expect(template.helperTemplate).not.toContain("__DATA_EXPRESSION__");
     expect(template.helperTemplate).toContain("mod agent_debug_mode");
+    // Rejects raw control bytes in data_json to protect NDJSON framing.
+    expect(template.helperTemplate).toContain("byte < 32");
     expect(template.helperTemplate).toContain("65536");
     expect(template.helperTemplate).toContain("// #region agent log");
     expect(template.helperTemplate).toContain("// #endregion");
@@ -111,6 +113,8 @@ describe("session-independent template renderers", () => {
     expect(template.callTemplate).not.toContain("__DATA_EXPRESSION__");
     expect(template.helperTemplate).not.toContain("__DATA_EXPRESSION__");
     expect(template.helperTemplate).toContain("namespace agent_debug_mode");
+    // Rejects raw control bytes in data_json to protect NDJSON framing.
+    expect(template.helperTemplate).toContain("c < 0x20");
     expect(template.helperTemplate).toContain("65536");
     expect(template.helperTemplate).toContain("// #region agent log");
     expect(template.helperTemplate).toContain("// #endregion");
@@ -141,6 +145,8 @@ describe("session-independent template renderers", () => {
     expect(template.helperTemplate).not.toContain("__DATA_EXPRESSION__");
     expect(template.helperTemplate).toContain("agent_debug_emit");
     expect(template.helperTemplate).toContain("agent_debug_json_string");
+    // Rejects raw control bytes in data_json to protect NDJSON framing.
+    expect(template.helperTemplate).toContain("*scan < 0x20");
     expect(template.helperTemplate).toContain("65536");
     expect(template.helperTemplate).toContain("// #region agent log");
     expect(template.helperTemplate).toContain("// #endregion");
