@@ -1,17 +1,17 @@
 class AgenticDebugMode < Formula
   desc "Evidence-first debugging CLI for coding agents"
   homepage "https://github.com/Toubat/agentic-debug-mode"
-  version "0.2.3"
+  version "0.3.0"
   license "MIT"
 
   on_arm do
     url "https://github.com/Toubat/agentic-debug-mode/releases/download/v#{version}/agentic-debug-mode-darwin-arm64.tar.gz"
-    sha256 "2d3d8496398ff9edc90c0d5b1eca548e036fd98440ead3df5751707c27e17a0d"
+    sha256 "0c6f65a222c8ce0c3a6a9e1f64b79adcdfd8646d441ae1c5b533e5bf81761566"
   end
 
   on_intel do
     url "https://github.com/Toubat/agentic-debug-mode/releases/download/v#{version}/agentic-debug-mode-darwin-x64.tar.gz"
-    sha256 "9dc23df397779280919f1ead447c90d7bfeb28b3cc5e232f9c45af530f5f00f7"
+    sha256 "f373fed33e19909b7d31ec635e8a7c6c7f8d4e12d21db6faefb797c0636edfa3"
   end
 
   def install
