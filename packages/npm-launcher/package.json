@@ -1,6 +1,6 @@
 {
   "name": "agentic-debug-mode",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Standalone evidence-first debugging CLI for coding agents",
   "license": "MIT",
   "repository": {
@@ -19,10 +19,10 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "agentic-debug-mode-darwin-arm64": "0.2.3",
-    "agentic-debug-mode-darwin-x64": "0.2.3",
-    "agentic-debug-mode-linux-arm64": "0.2.3",
-    "agentic-debug-mode-linux-x64": "0.2.3",
-    "agentic-debug-mode-win32-x64": "0.2.3"
+    "agentic-debug-mode-darwin-arm64": "0.3.0",
+    "agentic-debug-mode-darwin-x64": "0.3.0",
+    "agentic-debug-mode-linux-arm64": "0.3.0",
+    "agentic-debug-mode-linux-x64": "0.3.0",
+    "agentic-debug-mode-win32-x64": "0.3.0"
   }
 }
